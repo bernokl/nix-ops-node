@@ -2,7 +2,7 @@
   inputs.std.url = "github:divnix/std";
   inputs.nixpkgs.url = "nixpkgs";
   inputs.rust-overlay.url = "github:oxalica/rust-overlay";
-  inputs.edolstra-nix-cache = "github:edolstra/nix-serve"; 
+  inputs.edolstra-nix-cache.url = "github:edolstra/nix-serve"; 
 
   outputs = { std, ... } @ inputs:
     std.growOn
