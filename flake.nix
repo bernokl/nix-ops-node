@@ -2,6 +2,7 @@
   inputs.std.url = "github:divnix/std";
   inputs.nixpkgs.url = "nixpkgs";
   inputs.rust-overlay.url = "github:oxalica/rust-overlay";
+  inputs.edolstra-nix-cache = "github:edolstra/nix-serve"; 
 
   outputs = { std, ... } @ inputs:
     std.growOn
@@ -10,6 +11,7 @@
         cellsFrom = ./nix;
         cellBlocks = [
           (std.blockTypes.runnables "apps")
+          (std.blockTypes.runnables "caching")
 
           # The `devshell` type will allow us to have "development shells"
           # available. These are managed by `numtide/devshell`.
@@ -24,7 +26,7 @@
         ];
       }
       {
-        packages = std.harvest inputs.self [ "example" "apps" ];
+        packages = std.harvest inputs.self [ "example" "apps" "caching"];
 
         # We want to export our development shells so that the following works
         # as expected:
