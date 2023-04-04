@@ -1,0 +1,9 @@
+# Nix Related
+/target
+nix-profile*
+.direnv/*
+!.direnv/.git-keep # Convention to keep the .direnv around.
+.std/*
+!.std/.git-keep # Convention to keep the .std around.
+/result
+/result-lib

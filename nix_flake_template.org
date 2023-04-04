@@ -1,0 +1,180 @@
+* This is a document that was used to Stand up nix flake template repo
+  - This was a combination of std-book example tutorial and my own updates to the files to make it work
+  - Before going through this document I reccomend watching the following videos:
+  #+begin_example
+  - Std introduction - https://www.loom.com/share/cf9d5d1a10514d65bf6b8287f7ddc7d6
+  - Std cell blocks deep dive - https://www.loom.com/share/04fa1d578fd044059b02c9c052d87b77
+  - Std operables and OCI - https://www.loom.com/share/27d91aa1eac24bcaaaed18ea6d6d03ca
+  - Std Nixago - https://www.loom.com/share/5c1badd77ab641d3b8e256ddbba69042
+  #+end_example
+** Explore  divnix book
+- The below is simply notes I took from this book, I reccomend that you follow along online and keep your own notes as my notes have gaps.
+- Location https://jmgilman.github.io/std-book/getting_started/introduction.html
+- Divnix is broken up into 3 parts
+- 1) Repo, hightest level of organization
+- 2) Cell, Largest organizational unit, in my case would this be stakepool?
+- 3) Cellblock, this is the subcomponents of the cell, so would this be various parts needed for stakepool?
+- We are going to create a flake.nix file based on the standard flakes_schema (https://nixos.wiki/wiki/Flakes#Flake_schema)
+#+begin_example 
+- Description: is a string describing the flake.
+- Inputs: is an attribute set of all the dependencies of the flake. The schema is described below.
+- Outputs: is a function of one argument that takes an attribute set of all the realized inputs, and outputs another attribute set which schema is described below.
+- NixConfig: is an attribute set of values which reflect the values given to nix.conf. This can extend the normal behavior of a user's nix experience by adding flake-specific configuration, such as a binary cache.
+#+end_example
+- The biggest deviation for our flake is:
+#+begin_example 
+- CellsFrom: The cells that make up our organism must be defined in a single folder within our repository. It's idiomatic to name this folder either cells or nix. Within this directory, each cell is isolated into a subdirectory, with all of its cell blocks further nested under this subdirectory.
+- CellBlock: Each cell consists of one or more blocks which are defined here in list form. Recall that cell blocks are typed, and the general format for defining them is (std.blockTypes.<type> "<name>"); where <type> is a valid block type as defined here and <name> is where std should look for the cell block under the parent cell's folder.
+#+end_example
+- Keep in mind:
+#+begin_example 
+# This cell block is used to define how our example application is built.
+# Ultimately, this means it produces a nix derivation that, when evalulated,
+# produces our binary.
+#+end_example
+- This is very important structure, this allows all cell blocks to access all inputs and even cell blocks from sibling cells:
+#+begin_example
+Type	        | inputs	           | cell	          | inputs.cells
+packages	    | inputs.nixpkgs     | cell.runnables	| inputs.cells.*.runnable
+functions	    | inputs.nixpkgs.lib | cell.functions	| inputs.cells.*.functions
+...	          | inputs.*	         | cell.*         | inputs.cells.*.*
+
+#+end_example
+- NOTE: Since derivations are hashed based on their inputs, limiting inputs is the best practice to maximize cache usage and avoid the unnecessary rebuilding of our binary.
+- BIG LESSON, only one flake per repo, no idea why this is not a huge first intro to this. I could not get this last part to run https://jmgilman.github.io/std-book/getting_started/growing.html but after a day of struggle finally understand flake.nix is a map of your repo that you update and use to call.
+- I resolved the above by limiting the scope of the repo simply to the rust directory customizing it for my use case
+- This now works in my "new" repo, if you do not do this your git working tree places artifacts in the wrong place in the store
+#+begin_src tmux :session s1 
+nix run .#default world
+#+end_src
+- Lets start a shell with std enabled (note we can add this devshell to our flake but in this case we manually run:
+#+begin_src tmux :session s1 
+nix shell github:divnix/std
+#+end_src
+- I can now get to the TUI menu with
+#+begin_src tmux :session s1 
+std
+#+end_src
+ - I can see available commands in my TUI with
+ #+begin_src tmux :session s1
+ std list
+ #+end_src
+- Returns:
+#+begin_example
+//example/apps/default:build    --    💡 An example Rust binary which greets the user:  build it
+//example/apps/default:run      --    💡 An example Rust binary which greets the user:  run it
+#+end_example
+- And if I run:
+#+begin_src tmux :session s1 
+std //example/apps/default:run
+#+end_src
+- I get: 
+#+begin_example
+Usage: /nix/store/waxnd0r02r0k1akyiaxi4pxmvaiv9frx-example-0.1.0/bin/example <name>
+#+end_example
+- The above is expected as the program wants an input <name>, lets try it with:
+#+begin_src tmux :session s1 
+std //example/apps/default:run Berno 
+#+end_src
+- Returns:
+#+begin_example
+Hello, Berno!
+#+end_example
+- The amazing think to note is that our flake.nix is a map of all the relevant parts of the repo we can use to define how we call everything in the repo
+#+begin_example
+-    Inputs can be accessed via inputs
+-    Anything within our local cell can be accessed via cell
+-    Other cells can be accessed via inputs.cells
+#+end_example
+- Lets work a bit further on how we add things to our environments using devshell
+- As we begin iterating on our project, we'll come across this common theme: to add new functionality to our project, simply add new cell blocks. In the case of devshell, this remains true: to begin, we'll add a new block to our flake.nix:
+#+begin_example
+{
+  inputs.std.url = "github:divnix/std";
+  inputs.nixpkgs.url = "nixpkgs";
+  inputs.rust-overlay.url = "github:oxalica/rust-overlay";
+
+  outputs = { std, ... } @ inputs:
+    std.growOn
+      {
+        inherit inputs;
+        cellsFrom = ./nix;
+        cellBlocks = [
+          (std.blockTypes.runnables "apps")
+
+          # The `devshell` type will allow us to have "development shells"
+          # available. These are managed by `numtide/devshell`.
+          # See: https://github.com/numtide/devshell
+          (std.blockTypes.devshells "devshells")
+
+          # The `function` type is a generic block type that allows us to define
+          # some common Nix code that can be used in other cells. In this case,
+          # we're defining a toolchain cell block that will contain derivations
+          # for the Rust toolchain.
+          (std.blockTypes.functions "toolchain")
+        ];
+      }
+      {
+        packages = std.harvest inputs.self [ "example" "apps" ];
+
+        # We want to export our development shells so that the following works
+        # as expected:
+        #
+        # > nix develop
+        #
+        # Or, we can put the following in a .envrc:
+        #
+        # use flake
+        devShells = std.harvest inputs.self [ "example" "devshells" ];
+      };
+}
+#+end_example
+- Notice we added 2 things devshells and a toolchain, both will be placed in my examples directory
+- If you're not familiar with the idea of a development shell, it's essentially a self-contained environment that can be configured to provide all the tools and dependencies needed to work on our project.
+- Ok to be able to take advantage of the devshells lets install direnv
+#+begin_src tmux :session s1
+sudo apt-get install direnv
+#+end_src
+- Lets make sure direnv is running by adding the following to .bashrc
+#+begin_example
+eval "$(direnv hook $SHELL)"
+#+end_example
+- Reload bashrc
+- Now lets go add a .envrc to launch the devshell when we get into our directory
+#+begin_example
+#! /bin/sh
+# This file is sourced by direnv when entering the directory. The content below
+# is pulled from: https://divnix.github.io/std/guides/envrc.html
+
+source_up_if_exists .envrc.local
+export DEVSHELL_TARGET=${DEVSHELL_TARGET:-dev}
+
+. "$(nix eval .#__std.direnv_lib)"
+
+use std nix "//example/devshells:${DEVSHELL_TARGET}
+#+end_example
+- Lets allow direnv to run this .envrc
+#+begin_src tmux :session s1
+direnv allow .
+#+end_src
+- Aite lets get out of the directory and see what we see
+- I see in the shell my variables got loaded lets see what std show us
+#+begin_src tmux :session s1
+std list
+#+end_src
+- Yas:
+#+begin_example
+//example/apps/default:build     --    💡 An example Rust binary which greets the user:  build it
+//example/apps/default:run       --    💡 An example Rust binary which greets the user:  run it
+//example/devshells/dev:build    --    💡 General development shell with default yumi environment.:  build it
+//example/devshells/dev:enter    --    💡 General development shell with default yumi environment.:  enter this devshell
+#+end_example
+- Lets run our program again, notice std is now avaialbe to us because we are already in our environment
+#+begin_src tmux :session s1
+std //example/apps/default:run joy
+#+end_src
+- And we get our expected output
+#+begin_example
+Hello, joy!
+#+end_example
+- Ok so we now have a very basic flake, if we go into the directory we immediatly have access to all the variables needed to execute 
