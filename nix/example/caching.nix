@@ -38,6 +38,32 @@ in
     meta = {
       description = "This will be our caching server";
     };
+
+    builder = (
+      l.just (
+        l.attr {
+          name = "caching-server";
+          buildInputs = [
+            "nix-serve"
+          ];
+          outputs = [
+            "out"
+          ];
+          shell = l.shellScript {
+            code = [
+              "nix-serve --port 8080"
+            ];
+          };
+        }
+      )
+    );
+
+    outputs = {
+      out = {
+        file = "out";
+      };
+    };
+
   };
 }
 
