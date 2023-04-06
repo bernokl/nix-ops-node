@@ -33,7 +33,7 @@ in
       };
 
     } ''
-      "${nix-serve} --port 8080"
+      ${nix-serve}/bin/nix-serve --port 8080
     '';
 }
 
