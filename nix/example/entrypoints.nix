@@ -17,6 +17,7 @@
 let
   # The `inputs` attribute allows us to access all of our flake inputs.
   inherit (inputs) nixpkgs std;
+  inherit (inputs.nix-cache.packages) nix-serve;
 
   # This is a common idiom for combining lib with builtins.
   l = nixpkgs.lib // builtins;
@@ -25,51 +26,14 @@ in
   # We can think of this attribute set as what would normally be contained under
   # `outputs.packages` in our flake.nix. In this case, we're defining a default
   # package which contains a derivation for building our binary.
-  default = with inputs.nixpkgs; caching {
-
-    # `std` includes some useful helper functions, one of which is `incl` which
-    # handles filtering out unwanted files from our package src. The benefit
-    # here is it reduces unecessary builds by limiting the input files of our
-    # derivation to only those that are needed to build it.
-    src = std.incl (inputs.self) [
-      (inputs.self + github:edolstra/nix-serve)
-    ];
-
-    meta = {
-      description = "This will be our caching server";
-    };
-
-    builder = (
-      l.just (
-        l.attr {
-          name = "caching-server";
-          buildInputs = [
-            "nix-serve"
-          ];
-          outputs = [
-            "out"
-          ];
-          shell = l.shellScript {
-            code = [
-              "nix-serve --port 8080"
-            ];
-          };
-        }
-      )
-    );
-
-    outputs = {
-      out = {
-        file = "out";
+  default = nixpkgs.runCommand "serveit"  { 
+      buildInputs = [nix-serve];
+      meta = {
+        description = "This will be our caching server";
       };
-    };
 
-    packages = {
-      x86_64-linux = {
-        default = "curl";
-      };
-    };
-
-  };
+    } ''
+      "${nix-serve} --port 8080"
+    '';
 }
 

@@ -2,17 +2,18 @@
 let
   inherit (inputs) nixpkgs;
   inherit (inputs.std) std lib;
-  l = nixpkgs.lib // builtins;
+  inherit (inputs.nix-cache.packages) nix-serve;
 
 in {
   dev = (lib.dev.mkShell {
 
-    name = "example devshell";
+    name = "example-devshell";
 
     imports = [ std.devshellProfiles.default ];
 
     packages = [
       cell.toolchain.rust.stable.latest.default
+      nix-serve
     ];
 
     commands = [
@@ -22,6 +23,14 @@ in {
         help = "run the unit tests";
         category = "Testing";
       }
+
+      {
+        name = "serve";
+        command = "${nix-serve}/bin/nix-serve --port 8080";
+        help = "run the unit tests";
+        category = "Testing";
+      }
+
     ];
   }) // { meta.description = "General development shell with default yumi environment."; }; 
 

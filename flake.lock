@@ -65,24 +65,6 @@
         "type": "github"
       }
     },
-    "edolstra-nix-cache": {
-      "inputs": {
-        "nixpkgs": "nixpkgs"
-      },
-      "locked": {
-        "lastModified": 1678202930,
-        "narHash": "sha256-SF82/tTnagdazlETJLzXD9kjZ6lyk38agdLbmMx1UZE=",
-        "owner": "edolstra",
-        "repo": "nix-serve",
-        "rev": "3b6d30016d910a43e0e16f94170440a3e0b8fa8d",
-        "type": "github"
-      },
-      "original": {
-        "owner": "edolstra",
-        "repo": "nix-serve",
-        "type": "github"
-      }
-    },
     "flake-utils": {
       "locked": {
         "lastModified": 1659877975,
@@ -156,6 +138,24 @@
       "original": {
         "owner": "nlewo",
         "repo": "nix2container",
+        "type": "github"
+      }
+    },
+    "nix-cache": {
+      "inputs": {
+        "nixpkgs": "nixpkgs"
+      },
+      "locked": {
+        "lastModified": 1678202930,
+        "narHash": "sha256-SF82/tTnagdazlETJLzXD9kjZ6lyk38agdLbmMx1UZE=",
+        "owner": "edolstra",
+        "repo": "nix-serve",
+        "rev": "3b6d30016d910a43e0e16f94170440a3e0b8fa8d",
+        "type": "github"
+      },
+      "original": {
+        "owner": "edolstra",
+        "repo": "nix-serve",
         "type": "github"
       }
     },
@@ -316,7 +316,7 @@
     },
     "root": {
       "inputs": {
-        "edolstra-nix-cache": "edolstra-nix-cache",
+        "nix-cache": "nix-cache",
         "nixpkgs": "nixpkgs_2",
         "rust-overlay": "rust-overlay",
         "std": "std"
