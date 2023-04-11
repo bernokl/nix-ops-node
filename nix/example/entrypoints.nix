@@ -16,24 +16,31 @@
 }:
 let
   # The `inputs` attribute allows us to access all of our flake inputs.
-  inherit (inputs) nixpkgs std;
+  #  inherit (inputs) nixpkgs std;
+  inherit (inputs) nixpkgs;
+  inherit (inputs.std) std lib;
   inherit (inputs.nix-cache.packages) nix-serve;
+
 
   # This is a common idiom for combining lib with builtins.
   l = nixpkgs.lib // builtins;
+
+  debug = true;
+  log = reason: drv: l.debug.traceSeqN 1 "DEBUG {$reason}: ${drv}" drv;
+
 in
 {
+  ## This does the same as inherit (inputs.nix-cache.packages) nix-serve; combined with the entire default block
+  serve = log "TESTIN APP" (inputs.nix-cache.packages.nix-serve);
   # We can think of this attribute set as what would normally be contained under
   # `outputs.packages` in our flake.nix. In this case, we're defining a default
   # package which contains a derivation for building our binary.
-  default = nixpkgs.runCommand "serveit"  { 
-      buildInputs = [nix-serve];
-      meta = {
-        description = "This will be our caching server";
-      };
-
-    } ''
-      ${nix-serve}/bin/nix-serve --port 8080
-    '';
+  default = log "SERV APP" (nixpkgs.writeShellApplication   { 
+      name = "serveit";
+      runtimeInputs = [nix-serve];
+      text = ''
+      nix-serve --port 8080
+      '';
+   });
 }
 
