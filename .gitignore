@@ -7,3 +7,4 @@ nix-profile*
 !.std/.git-keep # Convention to keep the .std around.
 /result
 /result-lib
+*.swp

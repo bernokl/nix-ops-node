@@ -26,7 +26,8 @@
         ];
       }
       {
-        packages = std.harvest inputs.self [ "example" "apps" "entrypoints"];
+#        packages = std.harvest inputs.self [ "example" "apps" "entrypoints"];
+        packages = std.harvest inputs.self [["entrypoints"] [ "example" "apps"]];
 
         # We want to export our development shells so that the following works
         # as expected:

@@ -16,9 +16,9 @@
 }:
 let
   # The `inputs` attribute allows us to access all of our flake inputs.
-  #  inherit (inputs) nixpkgs std;
-  inherit (inputs) nixpkgs;
-  inherit (inputs.std) std lib;
+  inherit (inputs) nixpkgs std;
+#  inherit (inputs) nixpkgs;
+#  inherit (inputs.std) std lib;
   inherit (inputs.nix-cache.packages) nix-serve;
 
 
