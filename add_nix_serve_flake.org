@@ -1,0 +1,104 @@
+* Add our own service to the flake.
+- This section builds on the "nix_flake_template.org" file origionally created for https://github.com/bernokl/simple-nix-std-flake 
+- The intent is to add remote flake to our repo that we reference in our devehell for our own build/run on a new system.
+** Customize our flake to run a flake we care about
+- In this case we want our flake to run nix-serve (https://github.com/edolstra/nix-serve/) a custom caching server.
+- We update the flake.nix to import the flake, set a cellblock to declare the blockTypes and add compatibility layer with packages.
+#+begin_example
+## Importing the flake we want, naming it nix-cache for our context
+inputs.nix-cache.url = "github:edolstra/nix-serve";
+
+## CellBlocks
+## 1st argument, "entrypoints.nix" is the file we will use to define our actions for this flake
+(std.blockTypes.runnables "entrypoints")
+## Second argument, this is the compatibility layer it allows you to add nix-std functions to your entrypoint.nix file
+packages = std.harvest inputs.self [ "example" "entrypoints" ];
+## TODO: More detailed understanding of std.harvest and how to use it 
+#+end_example
+- We now create a entrypoints.nix that the "packages = " afrgument above refer to:
+#+begin_example
+{ inputs
+, cell
+}:
+let
+## Inherit nix-cache from our flake.nix, dril into the packages secion and set nix-serve we can refer to
+## We initially had trouble ineheriting the actual server, "nix repl" was good way to see we needed to add .packages
+  inherit (inputs.nix-cache.packages) nix-serve;
+  inherit (inputs) nixpkgs;
+  inherit (inputs.std) std lib;
+
+
+  l = nixpkgs.lib // builtins;
+  ## Very handy for logging to output path of derivation for investigation
+  debug = true;
+  log = reason: drv: l.debug.traceSeqN 1 "DEBUG {$reason}: ${drv}" drv;
+
+in
+{
+  ## Serve will do everything the entire default block will do.
+  ## Note we do not pass in port so you will have to do it wit nix build .#serve -- --port 8080
+  ## this would be run with nix build .#serve 
+  serve = nix-serve
+  ## Same command, but logging added for troubleshooting
+  #serve = log "TESTIN APP" (nix-serve);
+  ## This is one of the trivial builders https://ryantm.github.io/nixpkgs/builders/trivial-builders/#chap-trivial-builders
+  ## THis one write simple shell command you can apply with bash in text field 
+  default = nixpkgs.writeShellApplication   { 
+      name = "serveit";
+      runtimeInputs = [nix-serve];
+  ## Because we import the nix-serve package, it will be available in our path below.
+      text = ''
+      nix-serve --port 8080
+      '';
+   };
+}
+#+end_example
+** Make std default:run available through devshell
+- In the existing devshel iherit the input and add a command for it to run
+- I am not 100% how the the :build action works with the below.
+- Some updates to the packages celblock in flake.nix, is passing system to our entrypoint.nix and allow the default and serve to be built as flake or run in devshells using std
+#+begin_example
+# In "let" section we Inherit the package in our devshells.nix
+  inherit (inputs.nix-cache.packages) nix-serve;
+
+# In the "in" section under the commands section we name and run our command:
+# Note I have to point to the actual binary to make this work.
+ {
+        name = "serve";
+        command = "${nix-serve}/bin/nix-serve --port 8080";
+        help = "run the unit tests";
+        category = "Testing";
+  }
+#+end_example
+- To refresh your direnv to pick up the change run the following INSIDE the repo root
+- Note basic flake has install instructions for direnv
+#+begin_src tmux :session s1 
+direnv allow .
+#+end_src
+Lets look at our std inputs
+#+begin_src 
+std list
+#+end_src
+- Returns:
+- TODO: I do not know that this list updates, I removed all references to app including the file and still see it.
+#+begin_example
+//example/apps/default:build           --    💡 An example Rust binary which greets the user:  build it
+//example/apps/default:run             --    💡 An example Rust binary which greets the user:  run it
+//example/entrypoints/default:build    --    💡 This will be our caching server:  build it
+//example/entrypoints/default:run      --    💡 This will be our caching server:  run it
+//example/devshells/dev:build          --    💡 General development shell with default yumi environment.:  build it
+//example/devshells/dev:enter          --    💡 General development shell with default yumi environment.:  enter this devshell
+#+end_example
+- The std-flake version runs well in devshell.
+- The pure-flake will also now run using:
+#+begin_example
+nix build .#
+#+end_example
+** Next steps:
+- I wonder if ci pipeline would have configuration.nix that gives build agents devshells?
+- I want to go into std ci/cd pipelines again, from talking to Robert, gist is opsshells that gives us commands to run to execute our flakes on the remote machine
+- Let me discuss with ChatGPT.
+- Confirmed the flake will now start running the server on any nix enabled machine with:
+#+begin_src tmux :session s1
+nix run github[should be gitea]:/nix-binary-cache
+#+end_src
