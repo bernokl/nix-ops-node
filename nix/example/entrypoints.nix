@@ -7,7 +7,7 @@
 # produces our binary.
 
 # The function arguments shown here are universal to all cell blocks. We are
-# provided with the inputs from our flake and a `cell` attribute which refers
+# provided with the inputs from our flake and a `cell` x attribute which refers
 # to the parent cell this block falls under. Note that the inputs are
 # "desystematized" and are not in the same format as the `inputs` attribute in
 # the flake. This is a key benefit afforded by `std`.
@@ -24,7 +24,7 @@ let
 
   # This is a common idiom for combining lib with builtins.
   l = nixpkgs.lib // builtins;
-
+# Sets debug and log can be tweaked to suit our needs.
   debug = true;
   log = reason: drv: l.debug.traceSeqN 1 "DEBUG {$reason}: ${drv}" drv;
 
@@ -37,15 +37,14 @@ in
   # `outputs.packages` in our flake.nix. In this case, we're defining a default
   # package which contains a derivation for building our binary.
   # This will add the debug, remember to add the closing ) at the end of the block
-  default = log "SERV APP" (nixpkgs.writeShellApplication   { 
-#  default = nixpkgs.writeShellApplication   { 
+#  default = log "SERV APP" (nixpkgs.writeShellApplication   { 
+  default = nixpkgs.writeShellApplication   { 
       name = "serveit";
-      runtimeInputs = [inputs.nix-cache.packages.x86_64-linux.nix-serve];
-      #runtimeInputs = [nix-serve];
+      runtimeInputs = [nix-serve];
       text = ''
       nix-serve --port 8080
       '';
-   });
-   #};
+   #});
+   };
 }
 
