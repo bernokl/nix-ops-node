@@ -1,7 +1,7 @@
 {
   inputs.std.url = "github:divnix/std";
   inputs.nixpkgs.url = "nixpkgs";
-  inputs.rust-overlay.url = "github:oxalica/rust-overlay";
+#  inputs.rust-overlay.url = "github:oxalica/rust-overlay";
   inputs.nix-cache.url = "github:edolstra/nix-serve"; 
 
   outputs = { std, ... } @ inputs:
@@ -10,7 +10,7 @@
         inherit inputs;
         cellsFrom = ./nix;
         cellBlocks = [
-          (std.blockTypes.runnables "apps")
+#          (std.blockTypes.runnables "apps")
           (std.blockTypes.runnables "entrypoints")
 
           # The `devshell` type will allow us to have "development shells"
@@ -22,12 +22,12 @@
           # some common Nix code that can be used in other cells. In this case,
           # we're defining a toolchain cell block that will contain derivations
           # for the Rust toolchain.
-          (std.blockTypes.functions "toolchain")
+#          (std.blockTypes.functions "toolchain")
         ];
       }
       {
 #        packages = std.harvest inputs.self [ "example" "apps" "entrypoints"];
-        packages = std.harvest inputs.self [ "example" "entrypoints" ];
+#        packages = std.harvest inputs.self [ "rust-app" "entrypoints" ];
 
         # We want to export our development shells so that the following works
         # as expected:
@@ -37,7 +37,7 @@
         # Or, we can put the following in a .envrc:
         #
         # use flake
-        devShells = std.harvest inputs.self [ "example" "devshells" ];
+          devShells = std.harvest inputs.self [  "devshells" ];
       };
 }
 
