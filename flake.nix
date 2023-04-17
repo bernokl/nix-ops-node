@@ -26,10 +26,9 @@
         ];
       }
       {
-#        packages = std.harvest inputs.self [ "example" "apps" "entrypoints"];
 #        packages = std.harvest inputs.self [ "chache-server" "entrypoints" ];
-#        packages = std.harvest inputs.self [ [ "rust-app" "app" ] ];
-#        packages = std.harvest inputs.self [ [ "rust-app" "app" ] [ "chache-server" "entrypoints" ] ];
+#        packages = std.harvest inputs.self [ "rust-app" "apps" ];
+        packages = std.harvest inputs.self [ [ "rust-app" "apps" ] [ "chache-server" "entrypoints" ] ];
 
         # We want to export our development shells so that the following works
         # as expected:

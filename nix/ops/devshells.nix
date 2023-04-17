@@ -3,7 +3,7 @@ let
   inherit (inputs) nixpkgs;
   inherit (inputs.std) std lib;
 #  inherit (inputs.nix-cache.packages) nix-serve;
-  l = nixpkgs.lib //builtins;
+#  l = nixpkgs.lib //builtins;
 
 in {
   default = (lib.dev.mkShell {
@@ -11,7 +11,7 @@ in {
     imports = [ std.devshellProfiles.default ];
     packages = [
       cell.rust-app.toolchain.rust.stable.latest.default
-#      nix-serve
+      nix-serve
     ];
     commands = [
 #      {
