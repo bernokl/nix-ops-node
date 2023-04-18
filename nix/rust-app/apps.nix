@@ -26,7 +26,7 @@ in
   # `outputs.packages` in our flake.nix. In this case, we're defining a default
   # package which contains a derivation for building our binary.
   default = with inputs.nixpkgs; rustPlatform.buildRustPackage {
-    pname = "example";
+    pname = "my_rust_app";
     version = "0.1.0";
 
     # `std` includes some useful helper functions, one of which is `incl` which

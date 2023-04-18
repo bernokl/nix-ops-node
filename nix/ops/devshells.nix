@@ -3,7 +3,8 @@ let
   inherit (inputs) nixpkgs;
   inherit (inputs.std) std lib;
   inherit (inputs.nix-cache.packages) nix-serve;
-#  l = nixpkgs.lib //builtins;
+  inherit (inputs.cells.rust-app.toolchain) rust;
+  l = nixpkgs.lib //builtins;
 
 in {
   dev = (lib.dev.mkShell {
@@ -11,19 +12,21 @@ in {
     imports = [ std.devshellProfiles.default ];
     packages = [
 #      cell.rust-app.toolchain.rust.stable.latest.default
+#      cell.rust-app.toolchain.rust
+      rust.stable.latest.default
       nix-serve
     ];
     commands = [
-#      {
-#        name = "tests";
-#        command = "cargo test";
-#        help = "run the unit tests";
-#        category = "Testing";
-#      }
+      {
+        name = "tests";
+        command = "cargo test";
+        help = "run the unit tests";
+        category = "Testing";
+      }
       {
         name = "serve";
-#        command = "${nix-serve}/bin/nix-serve --port 8080";
-        command = "echo hi";
+        command = "${nix-serve}/bin/nix-serve --port 8080";
+#        command = "echo hi";
         help = "run the the cache-server";
         category = "Testing";
       }

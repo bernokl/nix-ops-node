@@ -26,9 +26,9 @@
         ];
       }
       {
-#        packages = std.harvest inputs.self [ "chache-server" "entrypoints" ];
-#        packages = std.harvest inputs.self [ "rust-app" "apps" ];
-        packages = std.harvest inputs.self [ [ "rust-app" "apps" ] [ "chache-server" "entrypoints" ] ];
+#        packages = std.harvest inputs.self [ "cache-server" "entrypoints" ];
+        packages = std.harvest inputs.self [ "rust-app" "apps" ];
+#        packages = std.harvest inputs.self [ [ "cache-server" "entrypoints" ] [ "rust-app" "apps" ] ];
 
         # We want to export our development shells so that the following works
         # as expected:
@@ -38,7 +38,7 @@
         # Or, we can put the following in a .envrc:
         #
         # use flake
-          devShells = std.harvest inputs.self [ "ops" "devshells" ];
+          devShells = std.harvest inputs.self [ "devshells" ];
       };
 }
 
