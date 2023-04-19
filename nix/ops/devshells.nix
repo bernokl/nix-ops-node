@@ -11,8 +11,10 @@ in {
     name = "yumi-shell";
     imports = [ std.devshellProfiles.default ];
     packages = [
+# Note I had to inherit the cell above because it is now running from different folders
+# This no longer works in the new nix/ops nix/rust-app folder structure
 #      cell.rust-app.toolchain.rust.stable.latest.default
-#      cell.rust-app.toolchain.rust
+# After I did the import above I could reference the package...
       rust.stable.latest.default
       nix-serve
     ];

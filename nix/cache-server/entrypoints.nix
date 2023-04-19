@@ -27,7 +27,7 @@ let
 # Sets debug and log can be tweaked to suit our needs.
   debug = true;
   log = reason: drv: l.debug.traceSeqN 1 "DEBUG {$reason}: ${drv}" drv;
-
+  package = nix-serve;
 in
 {
  ## This does the same as inherit (inputs.nix-cache.packages) nix-serve; combined with the entire default block
@@ -46,5 +46,14 @@ in
       '';
    #});
    };
+  nix-cache-server = lib.ops.mkOperable {
+## Not sure about this inherit it is one of the operable inputs
+      inherit package;
+      runtimeInputs = [nix-serve];
+      runtimeScript = ''
+       ${nix-serve}/bin/nix-serve --port 8080
+      '';
+  };
+  
 }
 
