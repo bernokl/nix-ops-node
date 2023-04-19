@@ -23,6 +23,7 @@
           # we're defining a toolchain cell block that will contain derivations
           # for the Rust toolchain.
           (std.blockTypes.functions "toolchain")
+          (std.blockTypes.containers "containers")
         ];
       }
       {
@@ -40,6 +41,7 @@
         #
         # use flake
           devShells = std.harvest inputs.self [ "devshells" ];
+          containers = std.harvest inputs.self [ "cache-server" "containers" ];
       };
 }
 
