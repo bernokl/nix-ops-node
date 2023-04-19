@@ -11,5 +11,9 @@ in {
    nix-cache-server = std.lib.ops.mkStandardOCI {
      inherit name operable;
    };
+   nix-cache-server-debug = std.lib.ops.mkStandardOCI {
+     inherit name operable;
+     debug = true;
+   };
 
 }

@@ -50,6 +50,9 @@ in
 ## Not sure about this inherit it is one of the operable inputs
       inherit package;
       runtimeInputs = [nix-serve];
+      debugInputs = with nixpkgs; [
+        nettools
+      ];
       runtimeScript = ''
        ${nix-serve}/bin/nix-serve --port 8080
       '';
