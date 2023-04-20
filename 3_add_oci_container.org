@@ -1,0 +1,326 @@
+
+* In this document we are going to re-organize repo from add_nix_serve_flake.org and add ops components
+- A few functions we might try to run from opsshell include:
+- Containerization, try to containerize our entrypoint
+- Standing up a new aws instance
+- build/run binaryCache flake on new instance.
+- As a side quest I want to add a second attic server flake to this repo.https://docs.attic.rs/tutorial.html
+** Making copy of nix-binary-cache re-organinzing a bit
+- I need to investigate structure from cardano-world and yumi-env to see how I should organize my cells, cell blocks
+- In std-nix video, cellblock would be app-name, cells would be package, operable and OCI
+- I am going to try:
+#+begin_example 
+[root] flake.nix
+  [nix] shells app cache-server
+    [shells] one cell per env or single cell.nix with multiple environments in it?
+    [rust-app] app.nix operable.nix oci.nix
+    [cache-server] chache-server.nix operable.nix oci.nix
+#+end_example
+- Looking at cardano-world, they have devshells embedded with automation that references profiles in other cellBlocks.
+- In yumi-env we have shells embedded with dev, I think I will follow that pattern adding ops with my shell in there and then same level app, cache server
+- My new structure:
+#+begin_example
+[root] flake.nix
+  [nix] ops rust-app ops cache-server
+    [ops] opsshell.nix
+    [rust-app] apps.nix toolchain.nix
+    [cache-server] entrypoints.nix containers.nix
+#+end_example
+** Add OCI container
+- Current:
+- Re-organize the repo to match yumi-env a bit better
+- Starting nix shell I can std run build and enter app, nix-cache, devshells
+- I can nix build the flake, note I still do not know how to combine packages, still need more info on std.harvest inputs
+- All parts of nix/std/shell interaction working as expected
+- To add OCI start by adding the following containers.nix file to our cache-server directory:
+- Note it consumes the operable we will define in entrypoints.
+#+begin_example
+{
+  inputs,
+  cell,
+}: let
+   inherit (inputs) nixpkgs std;
+   l = nixpkgs.lib // builtins;
+
+   name = "nix-cache-server"
+   operable = cell.entrypoints.default;
+in {
+   nix-cache-server = std.lib.ops.mkStandardOCI {
+     inherit name operable;
+   };
+
+}
+#+end_example
+- To make this work I need to turn my entrypoint into an operable with:
+#+begin_example
+# Because mkOperable expects a package I set it here so I can call it in the inherit, 
+# When I tried "inherit nix-serve" it complained expecting package.
+# In repo the nix-cache-server is defined under default in entrypoint.nix, 
+# TODO Seperate nix-serve.default to seperate packages.nix we can refer to her
+ package = nix-serve;
+in
+{
+ nix-cache-server = lib.ops.mkOperable {
+      inherit package;
+      runtimeInputs = [nix-serve];
+      runtimeScript = ''
+       ${nix-serve}/bin/nix-serve --port 8080
+      '';
+  };
+}
+#+end_example
+- I was able to build the flake and start the nix-cache-server using std
+- I was able to build the contianer with:
+#+begin_example
+std //cache-server/containers/nix-cache-server:load 
+#+end_example
+- I was able to run the container with:
+#+begin_example
+docker run nix-cache-server:yyvmmf9qzmjpl11sg0aly3svzyrjnjr0 -p 8080:8080
+#+end_example
+- But I do not see port 8080 bound on my host and adding debug entrypoint lets me run the binary, but does not explain why I do not see the port locally.
+- There are some concern that the issue might be related to local docker state, so intent is to spin up nix-node in aws and try on there
+- Spin up new aws instance to test on
+#+begin_src tmux :session s1
+export NIXPKGS_ALLOW_UNFREE=1
+#+end_src
+#+begin_src tmux :session s1
+nix-env -i ec2-api-tool
+#+end_src
+#+begin_src tmux :session s1
+ec2-run-instances -t t2.large --region ap-southeast-2 -W [aws_secret_access_key]  -O [aws_access_key_id] -b '/dev/xvda=:30' -k gsg-keypair ami-0638db75ba113c635
+#+end_src
+- Use previously generated keys to ssh to new instance:
+#+begin_src tmux :session s1
+ssh -i /tmp/gsg-keypair.pem root@3.25.252.5
+#+end_src
+- Allow experimental feutures
+#+begin_src tmux :session s1
+echo "experimental-features = nix-command flakes" > .config/nix/nix.conf
+#+end_src
+- Add std to our shell
+#+begin_src tmux :session s1
+nix shell github:divnix/std
+#+end_src
+- Lets install git
+#+begin_src tmux :session s1
+nix-env -i git
+#+end_src
+- Lets clone our repo
+#+begin_src tmux :session s1
+git clone https://github.com/bernokl/nix-ops.git
+#+end_src
+- Lets cd into our directory and see what std gives us
+#+begin_src tmux :session s1
+cd nix-ops && std list
+#+end_src
+- Nice! I see the entire repo, going to run my server as confirmation.
+#+begin_src tmux :session s1
+std //cache-server/entrypoints/nix-cache-server:run
+#+end_src
+- I see the server but can not telnet to it.
+- Lets disable iptables for a second
+- Add this to /etc/nixos/configuration.nix
+#+begin_example
+networking.firewall.enable = false;
+#+end_example
+- Rebuild
+#+begin_src tmux :session s1
+nixos-rebuild switch
+#+end_src
+- Yas I can now start and telnet to port 8080 from remote machne
+- Lets install docker
+#+begin_src tmux :session s1
+nix-env -i docker
+#+end_src
+- Lets enable daemon adding the followind to /etc/nixos/configuration.nix
+#+begin_example
+virtualisation.docker.enable = true;
+users.users.<your-username>.extraGroups = [ "docker" ];
+#+end_example
+- lets spin up basic httpd container to check it works
+#+begin_src tmux :session s1
+docker run -d -p 8080:80 --name my-httpd-container httpd
+#+end_src
+- The above spins up a container we can test
+- I can hit from curl and on remote ip
+#+begin_src tmux :session s1
+curl http://localhost:8080
+#+end_src
+- Lets stop the container and try our nix-ops container
+#+begin_src tmux :session s1
+docker stop my-httpd-container
+#+end_src
+- Lets try our container, first lets load the container in the local regestry
+#+begin_src tmux :session s1
+std //cache-server/containers/nix-cache-server:load
+#+end_src
+- Lets try and run it:
+#+begin_src tmux :session s1
+docker run -d nix-cache-server:yyvmmf9qzmjpl11sg0aly3svzyrjnjr0 -p 8080:8080
+#+end_src
+- It spins up the container, but no sign of bound ports
+#+begin_example
+ docker ps
+CONTAINER ID   IMAGE                                               COMMAND                  CREATED         STATUS         PORTS     NAMES
+50bda09a8ebb   nix-cache-server:yyvmmf9qzmjpl11sg0aly3svzyrjnjr0   "/bin/entrypoint -p …"   6 seconds ago   Up 5 seconds             peaceful_germain
+#+end_example
+- Netstat -nat shows nothing bound on port 8080
+- ps shows the container running the server:
+#+begin_example
+ ps faux | grep starm
+root       17204  0.0  0.0   6624  2664 pts/0    S+   14:30   0:00  |           \_ grep starm
+nobody     17177  0.2  0.2  19668 17184 ?        S    14:27   0:00      \_ starman master /nix/store/xgd2097cza1igzwq85rqf2dpak9086bg-nix-serve-20230307152850/libexec/nix-serve/nix-serve.psgi --port 8080
+#+end_example
+- So what the hell? why no bound ports on host?
+- Ugg because publish/port needs to be defined before container, this works:
+#+begin_src tmux :session s1
+docker run -d -p 8080:8080 nix-cache-server:yyvmmf9qzmjpl11sg0aly3svzyrjnjr0 
+#+end_src
+- Locally
+#+begin_src tmux :session s1
+docker run -d -p 8080:8080 nix-cache-server:mdig60llqj2d6j2n8gj8yfbg1mjw3v7b
+#+end_src
+- Confirmation:
+#+begin_example
+> docker port 456dca6b623c
+
+8080/tcp -> 0.0.0.0:8080
+8080/tcp -> :::8080
+#+end_example
+- The above still does not work on osx. I do not know what makes the container crash, tried to run server-debug but that fails with an attempt to find the blob on docker.io.....
+- Ummm, not sure how much time I want to spend troubleshooting osx issues
+- Final Conclusion:
+#+begin_example
+- We now have repo that will std/flake build our server. Note we did not add docker build to devshell, std is enough for now.
+- The same repo also now has capability to create oci image that we can run the server on a remote host.
+#+end_example
+- Next steps:
+- I think I will use this same repo to add the entrypoint to microvm. I am still not sure about deploy of this arfifact, shoving a derivation into a container to run seems redundant, would like to understand real world use, do we need complex scheduling? Are we anticipating multiple services running independently, then we probably want a service mesh, but for purpose of caching and even production cardano nodes the deploy question seems secondary.
+- If I have the microvm how do I want to depoy the caching service for use in yumi? What do I want to do about remote/local story sync? We talked about segmentation what does that mean? different directories for environments that can b nix copied?
+
+** Troubleshooting
+   
+*** Initial issues when restrucuring from nix-binary-cache to nix-ops.
+- Error I get
+#+begin_example
+error: flake 'git+file:///home/bkleinha/projects/nix_stuff/nix-ops' does not provide attribute 'packages.x86_64-linux.default' or 'defaultPackage.x86_64-linux'
+#+end_example
+- After digging into nix repl pressing enter on x86_64-linux I get references to missing cell blocks?
+#+begin_example
+error: evaluation aborted with the following error message: '
+       Missing Cell Block: /nix/store/d6lwxfbn4m170zhi8wj66j15ndiqlzyw-nix/rust-app
+       Containing Flake:   /nix/store/9nz9adzpgvxjm2q2nvyqbagig8sd2hr7-source/flake.nix
+#+end_example
+- mmm seems like red hering, 
+- Here is my very stripped down flake,devshel,entrypoint
+- Note the error I discover later I use rust-app, but point to cahce-server entrypoints by packages.
+- flake.nix
+#+begin_example 
+{
+  inputs.std.url = "github:divnix/std";
+  inputs.nixpkgs.url = "nixpkgs";
+  inputs.nix-cache.url = "github:edolstra/nix-serve"; 
+
+  outputs = { std, ... } @ inputs:
+    std.growOn
+      {
+        inherit inputs;
+        cellsFrom = ./nix;
+        cellBlocks = [
+         (std.blockTypes.runnables "entrypoints")
+         (std.blockTypes.devshells "opsshells")
+        ];
+      }
+      {
+        packages = std.harvest inputs.self [ "rust-app" "entrypoints" ];
+        devShells = std.harvest inputs.self [ "ops"  "opsshells" ];
+      };
+}
+#+end_example
+- nix/cache-server/entrypoints.nix
+#+begin_example
+{ inputs
+, cell
+}:
+let
+  inherit (inputs.nix-cache.packages) nix-serve;
+  inherit (inputs) nixpkgs;
+  inherit (inputs.std) std lib;
+
+
+  l = nixpkgs.lib // builtins;
+  debug = true;
+  log = reason: drv: l.debug.traceSeqN 1 "DEBUG {$reason}: ${drv}" drv;
+
+in
+{
+ serve = log "TESTIN APP" (nix-serve);
+  default = nixpkgs.writeShellApplication   { 
+      name = "serveit";
+      runtimeInputs = [nix-serve];
+      text = ''
+      nix-serve --port 8080
+      '';
+   };
+}
+#+end_example
+- nix/ops/opsshells.nix
+#+begin_example
+{ inputs, cell }:
+let
+  inherit (inputs) nixpkgs;
+  inherit (inputs.std) std lib;
+
+in {
+  ops = (lib.dev.mkShell {
+    name = "yumi-shell";
+    imports = [ std.devshellProfiles.default ];
+    commands = [
+      {
+        name = "serve";
+        command = "echo hi";
+        help = "run the the cache-server";
+        category = "Testing";
+      }
+
+    ];
+  }) // { meta.description = "General development shell with default yumi environment."; }; 
+
+}
+#+end_example
+- The "nix flake show":
+#+begin_example
+├───devShells
+error: evaluation aborted with the following error message: '
+       Missing Cell Block: /nix/store/98k4cy3aq35vpfz9i8f3418jyv38li4g-nix/ops
+       Containing Flake:   /nix/store/6hwlvaf4cfzxr4lgjky7510kbd99qpwh-source/flake.nix
+#+end_example
+- I changed "ops =" to "default ="
+- New error:
+#+begin_example
+error: 'devShells' is not an attribute set
+#+end_example
+- I resolved above with the following change:
+#+begin_example
+- devShells = std.harvest inputs.self [ "devshells" ];
++ devShells = std.harvest inputs.self [ "ops" "devshells" ];
+#+end_example
+- But now we are back to the obtuse "packages does not exist"
+- Turned out not to be so obtuse:
+#+begin_example
+# This was pointing to rust-app folder that is named apps, fixed it setting to the right folder
+- packages = std.harvest inputs.self [ "rust-app" "entrypoints" ];
++ packages = std.harvest inputs.self [ "cache-server" "entrypoints" ];
+#+end_example
+- Important: remember to clear std cache to see changes in list run:
+#+begin_src tmux :session s1
+std re-cache
+#+end_src
+- Manually start std shell
+#+begin_src tmux :session s1 
+nix shell github:divnix/std
+#+end_src
+- This one confuses me, could not enter devshell with .envrc, turned out to be:
+
+Hi
