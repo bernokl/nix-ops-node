@@ -24,6 +24,7 @@
           # for the Rust toolchain.
           (std.blockTypes.functions "toolchain")
           (std.blockTypes.containers "containers")
+          (std.blockTypes.microvms "microvm")
         ];
       }
       {
@@ -42,6 +43,7 @@
         # use flake
           devShells = std.harvest inputs.self [ "devshells" ];
           containers = std.harvest inputs.self [ "cache-server" "containers" ];
+          microvms = std.harvest inputs.self [ "cache-server" "microvm" ];
       };
 }
 
