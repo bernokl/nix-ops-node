@@ -198,6 +198,44 @@ docker run -d -p 8080:8080 nix-cache-server:mdig60llqj2d6j2n8gj8yfbg1mjw3v7b
 - Next steps:
 - I think I will use this same repo to add the entrypoint to microvm. I am still not sure about deploy of this arfifact, shoving a derivation into a container to run seems redundant, would like to understand real world use, do we need complex scheduling? Are we anticipating multiple services running independently, then we probably want a service mesh, but for purpose of caching and even production cardano nodes the deploy question seems secondary.
 - If I have the microvm how do I want to depoy the caching service for use in yumi? What do I want to do about remote/local story sync? We talked about segmentation what does that mean? different directories for environments that can b nix copied?
+** Spin caching server up in microvm
+- Going to take learnings from container to spin up micorvm with same operable exposed on 8080
+- Starting with example from https://github.com/divnix/std/blob/main/cells/lib/ops/mkMicrovm.md
+#+begin_example
+{
+  inputs,
+  cell,
+}: let
+
+   inherit (inputs) nixpkgs std;
+   l = nixpkgs.lib // builtins;
+   inherit (inputs.std.lib) ops;
+   
+in {
+
+    myhost = ops.mkMicrovm ({ pkgs, lib, ... }: { networking.hostName = "microvms-host";});
+
+}
+#+end_example
+- Update the flake with:
+#+begin_example
+ inputs.std.inputs.microvm.url =  "github:astro/microvm.nix";
+#outputs:
+ (std.blockTypes.microvms "microvms")
+
+ microvms = std.harvest inputs.self [ "cache-server" "microvms" ];
+ 
+#+end_example
+- Got good error message by running "std re-cache" followed by "std list"
+- It tells me I need to add microvm.nix as input in flake.nix like this:
+#+begin_example
+  inputs.std.inputs.microvm.url =  "github:astro/microvm.nix";
+#+end_example
+- And that seems to have satisfied it, a new std re-cache and std list now shows options for microvm/console/run trying console first:
+- So far so good, building very hard on this vm, 10 minutes so far, looks like it is p7ulling around 2 gig of data so not ideal, but lets be patient and see what it gets
+
+
+
 
 ** Troubleshooting
    
