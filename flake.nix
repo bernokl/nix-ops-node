@@ -3,7 +3,7 @@
   inputs.nixpkgs.url = "nixpkgs";
   inputs.rust-overlay.url = "github:oxalica/rust-overlay";
   inputs.nix-cache.url = "github:edolstra/nix-serve"; 
-
+  inputs.std.inputs.microvm.url =  "github:astro/microvm.nix";
   outputs = { std, ... } @ inputs:
     std.growOn
       {
