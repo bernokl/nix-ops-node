@@ -232,7 +232,7 @@ in {
   inputs.std.inputs.microvm.url =  "github:astro/microvm.nix";
 #+end_example
 - And that seems to have satisfied it, a new std re-cache and std list now shows options for microvm/console/run trying console first:
-- So far so good, building very hard on this vm, 10 minutes so far, looks like it is p7ulling around 2 gig of data so not ideal, but lets be patient and see what it gets
+- So far so good, building very hard on this vm, 10 minutes so far, looks like it is pulling around 2 gig of data so not ideal, but lets be patient and see what it gets
 
 
 
@@ -362,3 +362,13 @@ nix shell github:divnix/std
 - This one confuses me, could not enter devshell with .envrc, turned out to be:
 
 Hi
+
+* Open questions:
+- What do I use for deploy? devshell, but wrapping wht nixops, terraform other?
+- How do we manage artifacts? How do we set security groups ingress etc for the environment?
+- Related material:
+- https://nixops.readthedocs.io/en/latest/introduction.html
+- https://github.com/NixOS/nixops
+- https://hydra.nixos.org/build/115931128/download/1/manual/manual.html
+- https://typeclasses.com/nixos-on-aws
+- https://nixos.org/guides/deploying-nixos-using-terraform.html
