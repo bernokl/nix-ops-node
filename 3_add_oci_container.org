@@ -233,13 +233,251 @@ in {
 #+end_example
 - And that seems to have satisfied it, a new std re-cache and std list now shows options for microvm/console/run trying console first:
 - So far so good, building very hard on this vm, 10 minutes so far, looks like it is pulling around 2 gig of data so not ideal, but lets be patient and see what it gets
+- And that seems to have satisfied it, a new std re-cache and std list now shows options for microvm/console/run trying console first:
+- So far so good, building very hard on this vm, 10 minutes so far, looks like it is p7ulling around 2 gig of data so not ideal, but lets be patient and see what it gets
+- My local machine ran out of space (had 12 gig free) so I spun it up on aws, here is the result:
+#+begin_example
+> std //cache-server/microvms/myhost:console
 
+trace: warning: system.stateVersion is not set, defaulting to 23.05. Read why this matters on https://nixos.org/manual/nixos/stable/options.html#opt-system.stateVersion.
+------------------------------------------------
+Executing /root/.config/.local/state/last-action
+With args []
+------------------------------------------------
+2023/04/21 21:49:47 socat[614299] E UNIX-CLIENT:microvms-host.sock: No such file or directory
+No valid pty opened by qemu
+#+end_example
+- It does not look like it can find vittualization it needs, no qemu library, in a second :run attempt it could not find kvm, so it looks like the module has some unmet dependencies, I am not sure why, but considering the aws build on 4 cores and 8 gig of ram also took over an hour, I am not sure I want to pursue this much further.
+- Status:
+- I have options to console/run/microvm but none of them work.
+#+begin_example
+# It might be that this just needs more arguments
+std //cache-server/microvms/myhost:microvm
+trace: warning: system.stateVersion is not set, defaulting to 23.05. Read why this matters on https://nixos.org/manual/nixos/stable/options.html#opt-system.stateVersion.
+------------------------------------------------
+Executing /root/.config/.local/state/last-action
+With args []
+------------------------------------------------
+/root/.config/.local/state/last-action: line 2: /nix/store/kpx759w1i79hnqi9bjlk27lw7illz3p1-microvm-qemu-microvms-host/bin/microvm-: No such file or directory
 
+## let me go look what I see in that store path:
+total 24
+dr-xr-xr-x 2 root root 4096 Jan  1  1970 .
+dr-xr-xr-x 4 root root 4096 Jan  1  1970 ..
+lrwxrwxrwx 1 root root   79 Jan  1  1970 microvm-balloon -> /nix/store/b4ywqcm6hdsgs3xd1fczf69m5vqbj04y-microvm-balloon/bin/microvm-balloon
+lrwxrwxrwx 1 root root   79 Jan  1  1970 microvm-console -> /nix/store/3nyz4gksnmmxdyvqp3rzgqw80p7hn37z-microvm-console/bin/microvm-console
+lrwxrwxrwx 1 root root   71 Jan  1  1970 microvm-run -> /nix/store/0iyf0fq37nm71wn2jhfxajlk9gl74m0b-microvm-run/bin/microvm-run
+lrwxrwxrwx 1 root root   81 Jan  1  1970 microvm-shutdown -> /nix/store/22zwv264l9g79w5sln38rbqnn4jzwa2h-microvm-shutdown/bin/microvm-shutdown
 
+## Let me manually look at these:
+[root@ip-172-31-0-29:~/nix-ops]# /nix/store/kpx759w1i79hnqi9bjlk27lw7illz3p1-microvm-qemu-microvms-host/bin/microvm-console
+2023/04/24 12:58:24 socat[616629] E UNIX-CLIENT:microvms-host.sock: Connection refused
+No valid pty opened by qemu
 
-** Troubleshooting
+[root@ip-172-31-0-29:~/nix-ops]# /nix/store/kpx759w1i79hnqi9bjlk27lw7illz3p1-microvm-qemu-microvms-host/bin/microvm-run
+char device redirected to /dev/pts/1 (label con1)
+Could not access KVM kernel module: No such file or directory
+qemu-system-x86_64: failed to initialize kvm: No such file or directory
+#+end_example
+- I am missing something on the micorvm, perhaps there is a build.
+- At this point I want to move back to simply deploying the flake of the cache server using devshell. When we have use case for microvms that justifies the cost to spin up I will re-visit this build.
+** Deploy caching-server flake on aws instance using devshell
+- Goal is to create workflow for ops to interact with caching server in a meaningful way.
+- 1st step will be to add commands for spinning up new instance in a devshel
+- Lets declare env vars for our aws/secret/id
+- TODO: Grab all our secrets from central store, one pass?
+- I started by declaring this in .envar for now
+#+begin_example
+export AWS_SECRET_KEY=$(cat ~/.aws/credentials | grep secre | cut -d' ' -f3)
+export AWS_ID=$(cat ~/.aws/credentials | grep "_id" | cut -d' ' -f3)
+#+end_example
+- I tried to wrap the above in -f to check for file, but it always returend blank even with file, envrc does not fail if file does not exists, so left it like this for now.
+- ok, lets put very raw command in devshel, see what happens:
+#+begin_example
+ec2-run-instances -t t2.small --region ap-southeast-2 -W $AWS_SECRET_KEY  -O $AWS_ID -b '/dev/xvda=:25' -k gsg-keypair ami-0638db75ba113c635
+#+end_example
+- The final devshel has block added:
+#+begin_example
+      {
+        name = "launch_aws";
+        command = "ec2-run-instances -t t2.small --region ap-southeast-2 -W $AWS_SECRET_KEY  -O $AWS_ID -b '/dev/xvda=:25' -k gsg-keypair ami-0638db75ba113c635";
+        help = "start a new aws instance using ec2-run";
+        category = "Infra";
+      }
+#+end_example
+- I can now run this with simple launch_aws in my shell.
+- This is very nice, but now I need to consider how I manage machines spun up this way?
+- It still feels more mature to let the above be tf command that we then use for managing the instance.
+
+** explore nixops in more detail.
+- Clone the repo
+#+begin_src tmux :session s1
+  nix-env -i git
+  nix-env -i vim
+  git clone https://github.com/NixOS/nixops.git
+  # This needs to be looked at as well
+  # git clone https://github.com/NixOS/nixops.git
+#+end_src
+- Enter directory, install nixops in that shell
+#+begin_src tmux :session s1
+cd nixops
+nix-shell -p nixops
+#+end_src
+- It depends on python 2.7 that is no longer maintained so will need to allow insecure for now
+- TODO: Figure out risk mittigation so we can install nixops without INSECURE:
+#+begin_src tmux :session s1
+export NIXPKGS_ALLOW_INSECURE=1
+#+end_src
+- Lets try again. 
+#+begin_src tmux :session s1
+nix-shell -p nixops
+#+end_src
+- This a big boy it has been installing for 10 minutes, not pegging any resources I can see just taking time.
+- Going to read the intro and see if I can come up with game plan to test nixops for caching server deploy
+- https://hydra.nixos.org/build/115931128/download/1/manual/manual.html
+- This is what I learned so far :)
+#+begin_example
+nixops list
+/nix/store/j7x9mwjmmnim4xhc7mvin9nprlv12gg8-python2.7-apache-libcloud-2.8.3/lib/python2.7/site-packages/libcloud/common/google.py:93: CryptographyDeprecationWarning: Python 2 is no longer supported by the Python core team. Support for it is now deprecated in cryptography, and will be removed in the next release.
+  from cryptography.hazmat.backends import default_backend
++------+------+-------------+------------+------+
+| UUID | Name | Description | # Machines | Type |
++------+------+-------------+------------+------+
++------+------+-------------+------------+------+
+#+end_example
+- commands available in help:
+#+begin_example
+positional arguments:
+  operation            sub-command help
+    list               list all known deployments
+    create             create a new deployment
+    modify             modify an existing deployment
+    clone              clone an existing deployment
+    delete             delete a deployment
+    info               show the state of the deployment
+    check              check the state of the machines in the network (note that this might alter the internal nixops state to consolidate with the real state of the resource)
+    set-args           persistently set arguments to the deployment specification
+    deploy             deploy the network configuration
+    send-keys          send encryption keys
+    destroy            destroy all resources in the specified deployment
+    delete-resources   deletes the resource from the local NixOps state file.
+    stop               stop all virtual machines in the network
+    start              start all virtual machines in the network
+    reboot             reboot all virtual machines in the network
+    show-arguments     print the arguments to the network expressions
+    show-physical      print the physical network expression
+    ssh                login on the specified machine via SSH
+    ssh-for-each       execute a command on each machine via SSH
+    scp                copy files to or from the specified machine via scp
+    mount              mount a directory from the specified machine into the local filesystem
+    rename             rename machine in network
+    backup             make snapshots of persistent disks in network (currently EC2-only)
+    backup-status      get status of backups
+    remove-backup      remove a given backup
+    clean-backups      remove old backups
+    restore            restore machines based on snapshots of persistent disks in network (currently EC2-only)
+    show-option        print the value of a configuration option
+    list-generations   list previous configurations to which you can roll back
+    rollback           roll back to a previous configuration
+    delete-generation  remove a previous configuration
+    show-console-output
+                       print the machine's console output on stdout
+    dump-nix-paths     dump Nix paths referenced in deployments
+    export             export the state of a deployment
+    import             import deployments into the state file
+    edit               open the deployment specification in $EDITOR
+    copy-closure       copy closure to a target machine
+    list-plugins       list the available nixops plugins
+    unlock             Force unlock the deployment lock
+
+#+end_example
+- It looks like a mature project, can not find the date of the documents, but it looks valid. will compare it to readthedocs
+- https://nixops.readthedocs.io/en/latest/introduction.html
+- Boo, I need getting started I want basic deploy.nix for deploying example to aws
+- This looks promising https://ops.functionalalgebra.com/nixops-by-example/ will follow for a bit,
+- I tried to use the example deployment they had, but no joy, tried a few of the commands tweaking deploy
+- I keep getting "could not find specified deployment in state file.
+- I am also curious about nixops-aws, https://github.com/NixOS/nixops-aws
+- Local install install takes a bit of time, not too crazy resource intensive, ends with error:
+#+begin_example
+  File "<frozen importlib._bootstrap>", line 1004, in _find_and_load_unlocked
+ModuleNotFoundError: No module named 'setuptools'
+#+end_example
+- Get the same error trying it on aws instance so issue with library or not supported for linux, lets try osx
+- Nope same error with osx, something not working with the root branch of that repo, lets go see what has been most active
+- Going back to nixops, following a few threads on generating nixops files
+- Lets see if my new deploy works
+#+begin_src tmux :session s1
+nixops create -d my-unique-deployment-name -s /tmp/nixops/deploy.nixops
+#+end_src
+- No joy.
+- At this point I am strugling to find good documentation to get a POC of aws deploy using nixops is supposed to work.
+- This is very frustrating. I re-visit https://github.com/input-output-hk/cardano-node 
+- Importing and using that flake feels like not that much of a lift, but I am still unsure what I would use to wrap the deploy, 
+- It feels like I am missing something terraform will do lots of the lift on the aws side 
+- Ending TF deploy with init-script that flake run/install of input-output-hk/cardano-node works
+- I still wish my pipeline could be simpler, I wish I could talk to cardano-ops find out what their CI/CD pipeline looks like.
+** Explore nixops through cardano repos
+- Relevant links
+- cardano-ops https://github.com/input-output-hk/cardano-ops - seems pretty active till end of Jan then nothing...
+- ops-lib https://github.com/input-output-hk/ops-lib - had a commit two weeks ago
+- nixops-aws https://github.com/input-output-hk/nixops-aws - old? 4y
+- nixops https://github.com/input-output-hk/nixops - old? 10y
+- An example of deployment even if it is from 2019 ops-lib: https://github.com/input-output-hk/ops-lib/blob/master/example/deployments/example-aws.nix
+- For cardano-ops might be worth following up on the testnet example, https://github.com/input-output-hk/cardano-ops/blob/master/examples/shelley-testnet/README.md
+- ci-world: https://github.com/input-output-hk/ci-world - current, looks like pipeline building, but I do not understand application.
+- Work on iohk sre to learn process? Available positions:
+#+begin_example
+https://apply.workable.com/io-global/j/EF133E8D35/ sre - plutus - team member
+https://apply.workable.com/io-global/j/BF1192A4DE/ sre - atala - team member
+https://apply.workable.com/io-global/j/F8693FC8C7/ sre - lace - lead
+#+end_example
+- Engineering handbook
+#+begin_src tmux :session s1
+git clone https://github.com/input-output-hk/cardano-engineering-handbook.git
+#+end_src
+- cd in and start the shell
+#+begin_src tmux :session s1
+cd cardano-engineering-handbook
+#+end_src
+- O this is a policy handbook https://input-output-hk.github.io/cardano-engineering-handbook/introduction.html
+- Good but not much use for our quest to nix deployment.
+- Either go back to shelly-testnet example or return to our original goal.
+- Although tempting the shelly testnet example does not get us closer to our goal of our own nix-ops repo
+- STATUS: I really think everything we need is in these repos I just need a guide to see how I can use them. Leaving it off here for now.
+
+** Deploy nix-ops, caching-server/cardano-node
+- First step would be to look into https://nixos.org/guides/deploying-nixos-using-terraform.html
+- 
+* Next steps.
+- Go find any iohk discord server for nixops, reading up on https://iohk.io/en/blog/posts/2019/02/06/how-we-use-nix-at-iohk/
+- I did find https://discord.com/channels/568306982717751326/570351749848891393 for nixos, but nothing nixops of iohk-nix. Asked a couple of pointers for deploy, got very little back
+- Proper exploration of iohk repos and activities. DONE
+## Current back to goal.
+- Original Goal: (taking detour into iohk repos to see if any of this changes)
+- To build our own:  https://github.com/input-output-hk/cardano-node
+- Combine https://nixos.org/guides/deploying-nixos-using-terraform.html with https://github.com/yumiai/docs/blob/main/bernoHome/diypool_apply.org
+- Make sure deploy of flakes inherit input-output-hk/cardano-node
+- Add it all to current nix-ops repo
+- Incorporating commands for deploys into devshell commands
+- Step 1 use tf framework to stand up the caching server ending with init-script that launches the server
+- Step 2 use the above tf structure to incorporate diypool learnings into deploying iohk/cardano-node in our repo running tf with devshell.
+
+* Open questions:
+- What do I use for deploy? devshell, but wrapping wht nixops, terraform other?
+- How do we manage artifacts? How do we set security groups ingress etc for the environment?
+- Related material:
+- https://nixops.readthedocs.io/en/latest/introduction.html
+- https://github.com/NixOS/nixops
+- https://github.com/NixOS/nixops-aws 
+- https://hydra.nixos.org/build/115931128/download/1/manual/manual.html
+- https://typeclasses.com/nixos-on-aws
+- https://nixos.org/guides/deploying-nixos-using-terraform.html
+- https://github.com/input-output-hk/cardano-node/blob/master/doc/getting-started/building-the-node-using-nix.md
+
+* Troubleshooting
    
-*** Initial issues when restrucuring from nix-binary-cache to nix-ops.
+** Initial issues when restrucuring from nix-binary-cache to nix-ops.
 - Error I get
 #+begin_example
 error: flake 'git+file:///home/bkleinha/projects/nix_stuff/nix-ops' does not provide attribute 'packages.x86_64-linux.default' or 'defaultPackage.x86_64-linux'
@@ -363,12 +601,7 @@ nix shell github:divnix/std
 
 Hi
 
-* Open questions:
-- What do I use for deploy? devshell, but wrapping wht nixops, terraform other?
-- How do we manage artifacts? How do we set security groups ingress etc for the environment?
-- Related material:
-- https://nixops.readthedocs.io/en/latest/introduction.html
-- https://github.com/NixOS/nixops
-- https://hydra.nixos.org/build/115931128/download/1/manual/manual.html
-- https://typeclasses.com/nixos-on-aws
-- https://nixos.org/guides/deploying-nixos-using-terraform.html
+
+t* Troubleshooting
+   
+

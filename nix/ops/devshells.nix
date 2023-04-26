@@ -34,7 +34,7 @@ in {
       }
       {
         name = "launch_aws";
-        command = "ec2-run-instances -t t2.small --region ap-southeast-2 -W $AWS_SECRET_KEY  -O $AWS_ID -b '/dev/xvda=:25' -k gsg-keypair ami-0638db75ba113c635";
+        command = "ec2-run-instances -t t2.large --region ap-southeast-2 -W $AWS_SECRET_KEY  -O $AWS_ID -b '/dev/xvda=:25' -k gsg-keypair ami-0638db75ba113c635";
         help = "start a new aws instance using ec2-run";
         category = "Infra";
       }
