@@ -446,8 +446,37 @@ cd cardano-engineering-handbook
 - Although tempting the shelly testnet example does not get us closer to our goal of our own nix-ops repo
 - STATUS: I really think everything we need is in these repos I just need a guide to see how I can use them. Leaving it off here for now.
 
-** Deploy nix-ops, caching-server/cardano-node
+** Deploy nix-ops, caching-server/cardano-node combining std with tf
+- PLAN: provision AWS EC2-NixOS-AMI we then customize for our use with configuration.nix update
 - First step would be to look into https://nixos.org/guides/deploying-nixos-using-terraform.html
+- Interesting find from the above append this to main.tf simple way for configuration.nix control
+- TODO: I would need to fork the tweag/terraform-nixos repo
+#+begin_example
+module "deploy_nixos" {
+    source = "git::https://github.com/tweag/terraform-nixos.git//deploy_nixos?ref=5f5a0408b299874d6a29d1271e9bffeee4c9ca71"
+    nixos_config = "${path.module}/configuration.nix"
+    target_host = aws_instance.machine.public_ip
+    ssh_private_key_file = local_file.machine_ssh_key.filename
+    ssh_agent = false
+#+end_example
+- OK, lets create main.tf from tutorial and diypool inside terraform directory in nix-ops
+- TODO: Need to create seperate terraform repo with structure to match environments, set up terragrunt, auth, key-management, s3 state file. Keep it simpel.
+#+begin_src tmux :session s1
+mkdir terraform
+#+end_src
+- Adding directory by function for now.
+- TODO: Look at directory structure, compare to known good local structures you have, seperate env/modules etc.
+#+begin_src tmux :session s1
+mkdir caching-server
+#+end_src
+- Create main.tf from the deploying-nixos-using-terraform.html we are following
+- Updating the region, release and port 22 cidr to be private ip we control
+- Note in the file checked into the repo I removed the backend "remote" block, I want to set this up with s3.
+- Also note this will create a private key on each build. We should change this to keys we care about.
+- TODO: Set up TF s3 backend, key management?
+- OK the main.tf and configuration.nix in terraform/caching-server/ will init/apply the machine with pkgs installed.
+- Next I want to set those commands up through devshell, explore adding caching server flake to that configuration.nix
+
 - 
 * Next steps.
 - Go find any iohk discord server for nixops, reading up on https://iohk.io/en/blog/posts/2019/02/06/how-we-use-nix-at-iohk/
@@ -604,4 +633,5 @@ Hi
 
 t* Troubleshooting
    
+
 
