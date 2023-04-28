@@ -1,9 +1,9 @@
 provider "aws" {
     region = "ap-southeast-2"
 }
-
+# ref at the end is simple commit hash ie "git log" commit hash
 module "nixos_image" {
-    source  = "git::https://github.com/bernokl/terraform-nixos.git//aws_image_nixos?ref=5f5a0408b299874d6a29d1271e9bffeee4c9ca71"
+    source  = "git::https://github.com/bernokl/terraform-nixos.git//aws_image_nixos?ref=c8746e7a74f6e9c2c66c3492098c576758e987e8"
     release = "22.11"
 }
 

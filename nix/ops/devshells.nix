@@ -38,6 +38,28 @@ in {
         help = "start a new aws instance using ec2-run";
         category = "Infra";
       }
+       {
+         name = "aws_terraform_init";
+# This command needs to be relative to path, terraform needs to be run from right directory. does caching-server with main an configuration become /nix/store artifact?
+#         command = "terraform -chdir=\"./caching-server/\" plan";
+         command = "terraform init";
+         help = "start a new aws instance using terraform";
+         category = "Infra";
+       }
+       {
+         name = "aws_terraform_plan";
+#         command = "terraform -chdir=\"./caching-server/\" plan";
+         command = "terraform plan";
+         help = "Terraform plan";
+         category = "Infra";
+       }
+       {
+         name = "aws_terraform_apply";
+#         command = "terraform -chdir=\"./caching-server/\" plan";
+         command = "terraform apply";
+         help = "Terraform apply - spin up new instance in aws according main.tf ";
+         category = "Infra";
+       }
 
     ];
   }) // { meta.description = "General development shell with default yumi operations environment."; }; 
