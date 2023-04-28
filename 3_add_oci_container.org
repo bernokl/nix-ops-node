@@ -476,14 +476,66 @@ mkdir caching-server
 - TODO: Set up TF s3 backend, key management?
 - OK the main.tf and configuration.nix in terraform/caching-server/ will init/apply the machine with pkgs installed.
 - Next I want to set those commands up through devshell, explore adding caching server flake to that configuration.nix
+- Lets add ops commands for bringing up a machine, update our devshells.
+#+begin_example
+      { 
+        name = "aws_terraform_init";
+        # Need to make this command relative to the directory, not sure how we guarentee repo_root unless we use pwd to set env-var we can work from
+        # All of this feels cludgy, I do not like adding tf into the mix like this, will keep exploring nixops
+        #command = "terraform -chdir="./caching-server/" plan";
+        command = "terraform init";
+        help = "start a new aws instance using terraform";
+        category = "Infra";
+      }
+#+end_example
+- OK terraform init/plan/apply all works as expected.
+- The new host comes up with vim and git already installed like we expressed in our configuration.nix
+- Next step will be to see if we can get the caching-server flake to run using configuration.nix
+- Oof this is a deep rabbit hole.
+- I confirmed my server comes up as expected if I run:
+#+begin_src tmux :session s1
+nix run github:bernokl/nix-ops --extra-experimental-features nix-command --extra-experimental-features flakes
+#+end_src
+- But I can not find a simple way to run that command with configuration.nix
+- I need to learn more about: https://github.com/nix-community/terraform-nixos/tree/master/deploy_nixos#readme
+- I want to understand what I can do with it
+- Also I know iohk repos are full of https://github.com/serokell/deploy-rs references.
+- I want to compare the two
+- Here is a quick summary:
+#+begin_example
+Prerequisites: Nix, Rust, Cargo
+Create a new project:
+"cargo new deploy-rs"
+Add the deploy-rs dependency:
+"cargo add serokell/deploy-rs"
+Write a deploy.toml file:
+This file specifies the targets to deploy to.
+Write a main.rs file:
+This file contains the code that will be deployed to the targets.
+Build and deploy the project:
+"cargo build"
+"cargo deploy"
+
+The the README also covers some additional topics, such as:
+Using environment variables:
+You can use environment variables to set the values of the target's attributes.
+Deploying to multiple targets:
+You can deploy to multiple targets by specifying a list of targets in the targets section of the deploy.toml file.
+Deploying to a specific target:
+You can deploy to a specific target by specifying the target's name in the targets section of the deploy.toml file.
+#+end_example
+- I need to understand what cargo does better.
+- Current: compar deploy_nixos with deploy-rs 
+
+ 
 
 - 
 * Next steps.
 - Go find any iohk discord server for nixops, reading up on https://iohk.io/en/blog/posts/2019/02/06/how-we-use-nix-at-iohk/
 - I did find https://discord.com/channels/568306982717751326/570351749848891393 for nixos, but nothing nixops of iohk-nix. Asked a couple of pointers for deploy, got very little back
 - Proper exploration of iohk repos and activities. DONE
-## Current back to goal.
 - Original Goal: (taking detour into iohk repos to see if any of this changes)
+## Current back to goal.
 - To build our own:  https://github.com/input-output-hk/cardano-node
 - Combine https://nixos.org/guides/deploying-nixos-using-terraform.html with https://github.com/yumiai/docs/blob/main/bernoHome/diypool_apply.org
 - Make sure deploy of flakes inherit input-output-hk/cardano-node
