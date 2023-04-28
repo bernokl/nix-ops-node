@@ -28,8 +28,8 @@
         ];
       }
       {
-#        packages = std.harvest inputs.self [ "cache-server" "entrypoints" ];
-        packages = std.harvest inputs.self [ "rust-app" "apps" ];
+        packages = std.harvest inputs.self [ "cache-server" "entrypoints" ];
+#       packages = std.harvest inputs.self [ "rust-app" "apps" ];
 #        packages = std.harvest inputs.self [ [ "cache-server" "entrypoints" ] [ "rust-app" "apps" ] ];
 #        packages = std.harvest inputs.self [ [ "entrypoints" ] [ "apps" ] ];
 
