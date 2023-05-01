@@ -31,8 +31,7 @@ let
 in
 {
  ## This does the same as inherit (inputs.nix-cache.packages) nix-serve; combined with the entire default block
- ## currently manually passing in the inputs.....64-linux.
- serve = log "TESTIN APP" (nix-serve);
+# serve = log "TESTIN APP" (nix-serve);
   # We can think of this attribute set as what would normally be contained under
   # `outputs.packages` in our flake.nix. In this case, we're defining a default
   # package which contains a derivation for building our binary.
