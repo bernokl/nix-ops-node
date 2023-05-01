@@ -8,3 +8,5 @@ nix-profile*
 /result
 /result-lib
 *.swp
+.terraform*
+*.tfstate*
