@@ -10,3 +10,5 @@ nix-profile*
 *.swp
 .terraform*
 *.tfstate*
+*.swo
+*.pem
