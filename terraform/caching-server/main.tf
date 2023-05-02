@@ -12,7 +12,7 @@ resource "aws_security_group" "ssh_and_egress" {
         from_port   = 22
         to_port     = 22
         protocol    = "tcp"
-        cidr_blocks = [ "xx.xx.xx.xx/32" ]
+        cidr_blocks = [ "75.8.76.164/32" ]
     }
 
     egress {
@@ -47,6 +47,11 @@ resource "aws_instance" "machine" {
     root_block_device {
         volume_size = 50 # GiB
     }
+    user_data = <<-EOL
+#!env bash -xe
+nix run github:bernokl/nix-ops --no-write-lock-file --extra-experimental-features nix-command --extra-experimental-features flakes &>/tmp/outNix
+touch /tmp/number3
+EOL
 }
 
 output "public_dns" {
