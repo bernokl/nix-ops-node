@@ -12,8 +12,15 @@ resource "aws_security_group" "ssh_and_egress" {
         from_port   = 22
         to_port     = 22
         protocol    = "tcp"
-        cidr_blocks = [ "75.8.76.164/32" ]
+        cidr_blocks = [ "xx.xx.xx.xx/32" ]
     }
+    ingress {
+        from_port   = 8080
+        to_port     = 8080
+        protocol    = "tcp"
+        cidr_blocks = [ "xx.xx.xx.xx/32" ]
+    }
+
 
     egress {
         from_port       = 0
@@ -49,8 +56,7 @@ resource "aws_instance" "machine" {
     }
     user_data = <<-EOL
 #!env bash -xe
-nix run github:bernokl/nix-ops --no-write-lock-file --extra-experimental-features nix-command --extra-experimental-features flakes &>/tmp/outNix
-touch /tmp/number3
+nix run github:bernokl/nix-ops --no-write-lock-file &>/tmp/outNix
 EOL
 }
 

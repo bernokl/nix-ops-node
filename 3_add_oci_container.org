@@ -1,4 +1,3 @@
-
 * In this document we are going to re-organize repo from add_nix_serve_flake.org and add ops components
 - A few functions we might try to run from opsshell include:
 - Containerization, try to containerize our entrypoint
@@ -281,7 +280,7 @@ qemu-system-x86_64: failed to initialize kvm: No such file or directory
 #+end_example
 - I am missing something on the micorvm, perhaps there is a build.
 - At this point I want to move back to simply deploying the flake of the cache server using devshell. When we have use case for microvms that justifies the cost to spin up I will re-visit this build.
-** Deploy caching-server flake on aws instance using devshell
+** Deploy caching-server instance on aws instance using devshell
 - Goal is to create workflow for ops to interact with caching server in a meaningful way.
 - 1st step will be to add commands for spinning up new instance in a devshel
 - Lets declare env vars for our aws/secret/id
@@ -446,7 +445,7 @@ cd cardano-engineering-handbook
 - Although tempting the shelly testnet example does not get us closer to our goal of our own nix-ops repo
 - STATUS: I really think everything we need is in these repos I just need a guide to see how I can use them. Leaving it off here for now.
 
-** Deploy nix-ops, caching-server/cardano-node combining std with tf
+** Manually deploy nix-ops, caching-server/cardano-node combining std with terraform 
 - PLAN: provision AWS EC2-NixOS-AMI we then customize for our use with configuration.nix update
 - First step would be to look into https://nixos.org/guides/deploying-nixos-using-terraform.html
 - Interesting find from the above append this to main.tf simple way for configuration.nix control
@@ -526,6 +525,130 @@ You can deploy to a specific target by specifying the target's name in the targe
 #+end_example
 - I need to understand what cargo does better.
 - Current: compar deploy_nixos with deploy-rs 
+** Test deploy-rs
+- Steps provided by LLM
+#+begin_example
+Prerequisites: Nix, Rust, Cargo
+Create a new project:
+- cargo new deploy-rs
+- Add the deploy-rs dependency:
+   - cargo add serokell/deploy-rs
+- Write a deploy.toml file:
+   - This file specifies the targets to deploy to.
+- Write a main.rs file:
+   - This file contains the code that will be deployed to the targets.
+- Build and deploy the project:
+   - cargo build
+   - cargo deploy
+- The tutorial also covers some additional topics, such as:
+
+- Using environment variables:
+   - You can use environment variables to set the values of the target's attributes.
+- Deploying to multiple targets:
+   - You can deploy to multiple targets by specifying a list of targets in the targets section of the deploy.toml file.
+- Deploying to a specific target:
+   - You can deploy to a specific target by specifying the target's name in the targets section of the deploy.toml file.
+#+end_example
+- Talking to its competator I got instrucations to simply add these lines to my flake.nix
+#+begin_example
+deploy-rs.url = "github:serokell/deploy-rs";
+
+deploy = {
+          nodes = {
+            myAWSInstance = {
+              hostname = "example.com"; # Replace with your AWS instance's hostname or IP address
+              user = "my-aws-username"; # Replace with your AWS username
+
+              profiles = {
+                hello = {
+                  path = deploy-rs.lib.${system}.activate.custom self.defaultPackage.${system} "./bin/hello";
+                };
+              };
+            };
+          };
+        };
+#+end_example
+- I wonder if I set that path to my server path from devshells if this will work? worth a shot
+- I spent a couple of hours trying to integrate the various suggestions, but ended up turning to terraform for a bit
+- Status:
+- I could not find enough documentation to figure out deploy-rs. Robert did however point me to https://github.com/input-output-hk/ci-ops which looks promising.
+- I will re visit deploy-rs to see if I can get a better integration.
+** Deploy caching ec2 and flake using terraform user_data
+   - Lets get into our terraform directory
+#+begin_src tmux :session s1 
+cd terraform/caching-server
+#+end_src
+- To nix run our flake we will need to add some extraOptions.
+- Add the following to terraform configuration.nix
+#+begin_example
+  nix.extraOptions = ''
+      extra-experimental-features = nix-command
+      extra-experimental-features = flakes
+    '';
+#+end_example
+- Now to test our user_data block, add the following to the main.tf/aws_instance block
+- Note the content of the EOL file has no space in front of it
+- Also important to note the env bash -xe, because /bin/bash failed, but it allowed env I changed it
+#+begin_example
+    user_data = <<-EOL
+#!env bash -xe
+# Orig with options being passed in before the configuration.nix update
+#nix run github:bernokl/nix-ops --no-write-lock-file --extra-experimental-features nix-command --extra-experimental-features flakes &>/tmp/outNix
+nix run github:bernokl/nix-ops --no-write-lock-file &> /tmp/nixOutput 
+EOL
+}
+#+end_example
+- If this works the goal will be to put the content of the script into a seperate file
+- Lets go deploy our terraform and see what we got
+- NOTE: Everytime you apply this it will restart the machine meaning currently you will get in ip
+#+begin_src tmux :session s1
+aws_terraform_apply
+#+end_src
+- MM we got an error:
+#+begin_example
+Error: local-exec provisioner error
+#+end_example
+- Eneded up having to move --no-write-log to user_data, above is correct
+- Lets go see what we got, grab the ip from the aws-console
+#+begin_src tmux :session s1
+ssh -i id_rsa.pem root@54.153.212.43
+#+end_src
+- Lets go see if we have a working store
+#+begin_src tmux :session s1
+nix store ping --store http://127.0.0.1:8080 
+#+end_src
+- YAS!!
+#+begin_example
+Store URL: http://127.0.0.1:8080
+#+end_example
+- Lets whitelist my ip in iptables and see if our security group will let us hit the server from home
+#+begin_src tmux :session s1
+iptables -I INPUT 1 -s 75.8.76.164/32 -j ACCEPT
+#+end_src
+- Logged out of the machine and try:
+#+begin_src tmux :session s1
+nix store ping --store http://54.153.212.43:8080 
+#+end_src
+- YAS! our store is up and can be hit remotely.
+- Simple way to find out what it is serving:
+#+begin_src tmux :session s1
+  lsof /nix/store | grep starm
+  ps faux | grep starma
+#+end_src
+- Compare the pids between the two, you 
+- Initailly I could not figure out why I could not connect, this is simple test that port is being reached
+#+begin_src tmux :session s1
+tcpdump -i any port 8080
+#+end_src
+- Status:
+- In the current state the terraform apply will:
+- Deploy ec2 instance
+- Apply local configuration.nix to remote machine
+- Run user_data which currently installs and runs the nix-cache server
+- TODO:
+- Add efs to make nix-store persistent.
+- Create rsync between remote and dev stores
+ 
 
  
 
