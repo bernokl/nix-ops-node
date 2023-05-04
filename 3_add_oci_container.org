@@ -569,7 +569,7 @@ deploy = {
         };
 #+end_example
 - I wonder if I set that path to my server path from devshells if this will work? worth a shot
-- I spent a couple of hours trying to integrate the various suggestions, but ended up turning to terraform for a bit
+- I spent a couple of hours trying to integrate the various suggestions, but ended up turning to terraform for a bit.
 - Status:
 - I could not find enough documentation to figure out deploy-rs. Robert did however point me to https://github.com/input-output-hk/ci-ops which looks promising.
 - I will re visit deploy-rs to see if I can get a better integration.
@@ -611,7 +611,7 @@ Error: local-exec provisioner error
 - Eneded up having to move --no-write-log to user_data, above is correct
 - Lets go see what we got, grab the ip from the aws-console
 #+begin_src tmux :session s1
-ssh -i id_rsa.pem root@54.153.212.43
+ssh -i id_rsa.pem root@xx.xx.xx.xx 
 #+end_src
 - Lets go see if we have a working store
 #+begin_src tmux :session s1
@@ -623,11 +623,11 @@ Store URL: http://127.0.0.1:8080
 #+end_example
 - Lets whitelist my ip in iptables and see if our security group will let us hit the server from home
 #+begin_src tmux :session s1
-iptables -I INPUT 1 -s 75.8.76.164/32 -j ACCEPT
+iptables -I INPUT 1 -s xx.xx.xx.xx/32 -j ACCEPT
 #+end_src
 - Logged out of the machine and try:
 #+begin_src tmux :session s1
-nix store ping --store http://54.153.212.43:8080 
+nix store ping --store http://xx.xx.xx.xx:8080 
 #+end_src
 - YAS! our store is up and can be hit remotely.
 - Simple way to find out what it is serving:
@@ -640,173 +640,26 @@ nix store ping --store http://54.153.212.43:8080
 #+begin_src tmux :session s1
 tcpdump -i any port 8080
 #+end_src
-- Status:
-- In the current state the terraform apply will:
+
+* Status:
+** In the current state the terraform apply will:
 - Deploy ec2 instance
 - Apply local configuration.nix to remote machine
 - Run user_data which currently installs and runs the nix-cache server
-- TODO:
-- Add efs to make nix-store persistent.
-- Create rsync between remote and dev stores
- 
-
- 
-
-- 
-* Next steps.
-- Go find any iohk discord server for nixops, reading up on https://iohk.io/en/blog/posts/2019/02/06/how-we-use-nix-at-iohk/
-- I did find https://discord.com/channels/568306982717751326/570351749848891393 for nixos, but nothing nixops of iohk-nix. Asked a couple of pointers for deploy, got very little back
-- Proper exploration of iohk repos and activities. DONE
-- Original Goal: (taking detour into iohk repos to see if any of this changes)
-## Current back to goal.
-- To build our own:  https://github.com/input-output-hk/cardano-node
-- Combine https://nixos.org/guides/deploying-nixos-using-terraform.html with https://github.com/yumiai/docs/blob/main/bernoHome/diypool_apply.org
-- Make sure deploy of flakes inherit input-output-hk/cardano-node
-- Add it all to current nix-ops repo
-- Incorporating commands for deploys into devshell commands
-- Step 1 use tf framework to stand up the caching server ending with init-script that launches the server
-- Step 2 use the above tf structure to incorporate diypool learnings into deploying iohk/cardano-node in our repo running tf with devshell.
-
-* Open questions:
-- What do I use for deploy? devshell, but wrapping wht nixops, terraform other?
-- How do we manage artifacts? How do we set security groups ingress etc for the environment?
-- Related material:
-- https://nixops.readthedocs.io/en/latest/introduction.html
-- https://github.com/NixOS/nixops
-- https://github.com/NixOS/nixops-aws 
-- https://hydra.nixos.org/build/115931128/download/1/manual/manual.html
-- https://typeclasses.com/nixos-on-aws
-- https://nixos.org/guides/deploying-nixos-using-terraform.html
-- https://github.com/input-output-hk/cardano-node/blob/master/doc/getting-started/building-the-node-using-nix.md
-
-* Troubleshooting
+- At the end of the process I have a working cache server in aws I can use in local or other aws instances as they come up.
+- We are not deploying this right now because running a big enough instance 24-7 will not add enough value to our current dev cycle (there is already a ssh-sync inside yumi).
+** TODO:
+- Add efs to make nix-store persistent, or do we just want to know with s3 backup solution? 
+- S3 backups is documented and might be simpler at this point, I would need to see how we use store to decide. 
+- Add tailscale and get machine to register with yumi tailscale network
+- Start values file for vars like machine type, whitelisting etc
+- Fix key management, right now new key gets generated for the new machine created. Key rotation? 1Pass? other?
+- If we want to keep std menu commands we need to fix pathing (ie terraform can only run from tf dir. How do we know where the menu is being called from? I am torn, I like that the devshell is easy way to see what we do with tools, but it also feels like a layer of complexity that does not expose everything you can do. 
+- Create rsync between remote efs/S3? and dev stores on NAS
+- We should have loadbalancer defined for this service, if s3/efs holds copy of store do we care about uptime?
+- We should have gateway we route all the traffic out through so we can do whitelisting for a consistent ip for services like tailscale.
+** For further consideration:
+- I think the nix-serve-flake we run can be vastly simplified, what we call https://github.com/edolstra/nix-serve, it has some options for signing packages that we might care about as caches prolifirates, I am not sure if there is additional value over just nixpkgs.nix-serve I do not understand, but it is simple to use.
+- When I started this project I did not understand how simple it is to just nixpkgs.nix-serve any store, there is 4 very simple alternatives to what we have. At some point it would be good to evaluate this in context of data syncing https://nixos.org/manual/nix/stable/package-management/binary-cache-substituter.html
+- With understanding I have not I would like to re-visit this entire architecture, there are lots more possibilities I now see
    
-** Initial issues when restrucuring from nix-binary-cache to nix-ops.
-- Error I get
-#+begin_example
-error: flake 'git+file:///home/bkleinha/projects/nix_stuff/nix-ops' does not provide attribute 'packages.x86_64-linux.default' or 'defaultPackage.x86_64-linux'
-#+end_example
-- After digging into nix repl pressing enter on x86_64-linux I get references to missing cell blocks?
-#+begin_example
-error: evaluation aborted with the following error message: '
-       Missing Cell Block: /nix/store/d6lwxfbn4m170zhi8wj66j15ndiqlzyw-nix/rust-app
-       Containing Flake:   /nix/store/9nz9adzpgvxjm2q2nvyqbagig8sd2hr7-source/flake.nix
-#+end_example
-- mmm seems like red hering, 
-- Here is my very stripped down flake,devshel,entrypoint
-- Note the error I discover later I use rust-app, but point to cahce-server entrypoints by packages.
-- flake.nix
-#+begin_example 
-{
-  inputs.std.url = "github:divnix/std";
-  inputs.nixpkgs.url = "nixpkgs";
-  inputs.nix-cache.url = "github:edolstra/nix-serve"; 
-
-  outputs = { std, ... } @ inputs:
-    std.growOn
-      {
-        inherit inputs;
-        cellsFrom = ./nix;
-        cellBlocks = [
-         (std.blockTypes.runnables "entrypoints")
-         (std.blockTypes.devshells "opsshells")
-        ];
-      }
-      {
-        packages = std.harvest inputs.self [ "rust-app" "entrypoints" ];
-        devShells = std.harvest inputs.self [ "ops"  "opsshells" ];
-      };
-}
-#+end_example
-- nix/cache-server/entrypoints.nix
-#+begin_example
-{ inputs
-, cell
-}:
-let
-  inherit (inputs.nix-cache.packages) nix-serve;
-  inherit (inputs) nixpkgs;
-  inherit (inputs.std) std lib;
-
-
-  l = nixpkgs.lib // builtins;
-  debug = true;
-  log = reason: drv: l.debug.traceSeqN 1 "DEBUG {$reason}: ${drv}" drv;
-
-in
-{
- serve = log "TESTIN APP" (nix-serve);
-  default = nixpkgs.writeShellApplication   { 
-      name = "serveit";
-      runtimeInputs = [nix-serve];
-      text = ''
-      nix-serve --port 8080
-      '';
-   };
-}
-#+end_example
-- nix/ops/opsshells.nix
-#+begin_example
-{ inputs, cell }:
-let
-  inherit (inputs) nixpkgs;
-  inherit (inputs.std) std lib;
-
-in {
-  ops = (lib.dev.mkShell {
-    name = "yumi-shell";
-    imports = [ std.devshellProfiles.default ];
-    commands = [
-      {
-        name = "serve";
-        command = "echo hi";
-        help = "run the the cache-server";
-        category = "Testing";
-      }
-
-    ];
-  }) // { meta.description = "General development shell with default yumi environment."; }; 
-
-}
-#+end_example
-- The "nix flake show":
-#+begin_example
-├───devShells
-error: evaluation aborted with the following error message: '
-       Missing Cell Block: /nix/store/98k4cy3aq35vpfz9i8f3418jyv38li4g-nix/ops
-       Containing Flake:   /nix/store/6hwlvaf4cfzxr4lgjky7510kbd99qpwh-source/flake.nix
-#+end_example
-- I changed "ops =" to "default ="
-- New error:
-#+begin_example
-error: 'devShells' is not an attribute set
-#+end_example
-- I resolved above with the following change:
-#+begin_example
-- devShells = std.harvest inputs.self [ "devshells" ];
-+ devShells = std.harvest inputs.self [ "ops" "devshells" ];
-#+end_example
-- But now we are back to the obtuse "packages does not exist"
-- Turned out not to be so obtuse:
-#+begin_example
-# This was pointing to rust-app folder that is named apps, fixed it setting to the right folder
-- packages = std.harvest inputs.self [ "rust-app" "entrypoints" ];
-+ packages = std.harvest inputs.self [ "cache-server" "entrypoints" ];
-#+end_example
-- Important: remember to clear std cache to see changes in list run:
-#+begin_src tmux :session s1
-std re-cache
-#+end_src
-- Manually start std shell
-#+begin_src tmux :session s1 
-nix shell github:divnix/std
-#+end_src
-- This one confuses me, could not enter devshell with .envrc, turned out to be:
-
-Hi
-
-
-t* Troubleshooting
-   
-
-
