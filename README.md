@@ -1,7 +1,7 @@
-# Deploy caching ec2 and flake using terraform user<sub>data</sub>
+# Deploy caching ec2 and flake using terraform user_data
 
 -   This is a very simple document going over how we deploy a caching server to aws
--   It assumes you have a *home*[user]/.aws/credentials<sub>nix</sub>/config<sub>nix</sub>
+-   It assumes you have a *home*[user]/.aws/credentials_nix/config_nix
 -   Lets get into our terraform directory
 
            cd terraform/caching-server
@@ -14,7 +14,7 @@
               extra-experimental-features = flakes
             '';
 
--   Now to test our user<sub>data</sub> block, add the following to the main.tf/aws<sub>instance</sub> block
+-   Now to test our user_data block, add the following to the main.tf/aws_instance block
 -   Note the content of the EOL file has no space in front of it
 -   Also important to note the env bash -xe, because /bin/bash failed, but it allowed env I changed it
 
