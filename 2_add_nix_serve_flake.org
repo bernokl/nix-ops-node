@@ -1,5 +1,6 @@
 * Add our own service to the flake.
 - This section builds on the "nix_flake_template.org" file origionally created for https://github.com/bernokl/simple-nix-std-flake 
+- This work was done in https://github.com/bernokl/nix-binary-cache
 - The intent is to add remote flake to our repo that we reference in our devehell for our own build/run on a new system.
 ** Customize our flake to run a flake we care about
 - In this case we want our flake to run nix-serve (https://github.com/edolstra/nix-serve/) a custom caching server.

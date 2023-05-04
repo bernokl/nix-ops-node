@@ -1,4 +1,5 @@
 * This is a document that was used to Stand up nix flake template repo
+  - This work was done in the following repo https://github.com/bernokl/simple-nix-std-flake
   - This was a combination of std-book example tutorial and my own updates to the files to make it work
   - Before going through this document I reccomend watching the following videos:
   #+begin_example
