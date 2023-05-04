@@ -1,4 +1,26 @@
 * In this document we are going to re-organize repo from add_nix_serve_flake.org and add ops components
+* Status:
+** In the current state the terraform apply will:
+- Deploy ec2 instance
+- Apply local configuration.nix to remote machine
+- Run user_data which currently installs and runs the nix-cache server
+- At the end of the process I have a working cache server in aws I can use in local or other aws instances as they come up.
+- We are not deploying this right now because running a big enough instance 24-7 will not add enough value to our current dev cycle (there is already a ssh-sync inside yumi).
+** TODO:
+- Add efs to make nix-store persistent, or do we just want to know with s3 backup solution? 
+- S3 backups is documented and might be simpler at this point, I would need to see how we use store to decide. 
+- Add tailscale and get machine to register with yumi tailscale network
+- Start values file for vars like machine type, whitelisting etc
+- Fix key management, right now new key gets generated for the new machine created. Key rotation? 1Pass? other?
+- If we want to keep std menu commands we need to fix pathing (ie terraform can only run from tf dir. How do we know where the menu is being called from? I am torn, I like that the devshell is easy way to see what we do with tools, but it also feels like a layer of complexity that does not expose everything you can do. 
+- Create rsync between remote efs/S3? and dev stores on NAS
+- We should have loadbalancer defined for this service, if s3/efs holds copy of store do we care about uptime?
+- We should have gateway we route all the traffic out through so we can do whitelisting for a consistent ip for services like tailscale.
+** For further consideration:
+- I think the nix-serve-flake we run can be vastly simplified, what we call https://github.com/edolstra/nix-serve, it has some options for signing packages that we might care about as caches prolifirates, I am not sure if there is additional value over just nixpkgs.nix-serve I do not understand, but it is simple to use.
+- When I started this project I did not understand how simple it is to just nixpkgs.nix-serve any store, there is 4 very simple alternatives to what we have. At some point it would be good to evaluate this in context of data syncing https://nixos.org/manual/nix/stable/package-management/binary-cache-substituter.html
+- With understanding I have not I would like to re-visit this entire architecture, there are lots more possibilities I now see
+** Purpose of this exploration   
 - A few functions we might try to run from opsshell include:
 - Containerization, try to containerize our entrypoint
 - Standing up a new aws instance
@@ -641,25 +663,3 @@ nix store ping --store http://xx.xx.xx.xx:8080
 tcpdump -i any port 8080
 #+end_src
 
-* Status:
-** In the current state the terraform apply will:
-- Deploy ec2 instance
-- Apply local configuration.nix to remote machine
-- Run user_data which currently installs and runs the nix-cache server
-- At the end of the process I have a working cache server in aws I can use in local or other aws instances as they come up.
-- We are not deploying this right now because running a big enough instance 24-7 will not add enough value to our current dev cycle (there is already a ssh-sync inside yumi).
-** TODO:
-- Add efs to make nix-store persistent, or do we just want to know with s3 backup solution? 
-- S3 backups is documented and might be simpler at this point, I would need to see how we use store to decide. 
-- Add tailscale and get machine to register with yumi tailscale network
-- Start values file for vars like machine type, whitelisting etc
-- Fix key management, right now new key gets generated for the new machine created. Key rotation? 1Pass? other?
-- If we want to keep std menu commands we need to fix pathing (ie terraform can only run from tf dir. How do we know where the menu is being called from? I am torn, I like that the devshell is easy way to see what we do with tools, but it also feels like a layer of complexity that does not expose everything you can do. 
-- Create rsync between remote efs/S3? and dev stores on NAS
-- We should have loadbalancer defined for this service, if s3/efs holds copy of store do we care about uptime?
-- We should have gateway we route all the traffic out through so we can do whitelisting for a consistent ip for services like tailscale.
-** For further consideration:
-- I think the nix-serve-flake we run can be vastly simplified, what we call https://github.com/edolstra/nix-serve, it has some options for signing packages that we might care about as caches prolifirates, I am not sure if there is additional value over just nixpkgs.nix-serve I do not understand, but it is simple to use.
-- When I started this project I did not understand how simple it is to just nixpkgs.nix-serve any store, there is 4 very simple alternatives to what we have. At some point it would be good to evaluate this in context of data syncing https://nixos.org/manual/nix/stable/package-management/binary-cache-substituter.html
-- With understanding I have not I would like to re-visit this entire architecture, there are lots more possibilities I now see
-   
