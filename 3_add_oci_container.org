@@ -1,6 +1,6 @@
 * In this document we are going to re-organize repo from add_nix_serve_flake.org and add ops components
-* Status:
-** In the current state the terraform apply will:
+** Status:
+- In the current state the terraform apply will:
 - Deploy ec2 instance
 - Apply local configuration.nix to remote machine
 - Run user_data which currently installs and runs the nix-cache server
