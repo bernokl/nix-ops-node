@@ -1,11 +1,3 @@
-
-# Table of Contents
-
-1.  [Deploy caching ec2 and flake using terraform user<sub>data</sub>](#orgc3fc344)
-
-
-<a id="orgc3fc344"></a>
-
 # Deploy caching ec2 and flake using terraform user<sub>data</sub>
 
 -   This is a very simple document going over how we deploy a caching server to aws
