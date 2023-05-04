@@ -1,6 +1,7 @@
 # Deploy caching ec2 and flake using terraform user_data
 
 -   This is a very simple document going over how we deploy a caching server to aws
+-   Lots more detail on how this terraform evolved can be found in the 3_add_oci_container.org file
 -   It assumes you have a *home*[user]/.aws/credentials_nix/config_nix
 -   Lets get into our terraform directory
 

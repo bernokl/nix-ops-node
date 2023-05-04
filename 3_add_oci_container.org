@@ -1,5 +1,6 @@
 * In this document we are going to re-organize repo from add_nix_serve_flake.org and add ops components
 ** Status:
+- This document belongs with https://github.com/bernokl/nix-ops
 - In the current state the terraform apply will:
 - Deploy ec2 instance
 - Apply local configuration.nix to remote machine
