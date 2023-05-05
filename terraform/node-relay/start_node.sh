@@ -12,3 +12,4 @@ EOF
 nix build --accept-flake-config github:input-output-hk/cardano-node?ref=master &&
 echo we_got_clean_build > /tmp/outNix
 
+systemctl start cardano-node-relay-daemon.service 
