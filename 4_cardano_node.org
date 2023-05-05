@@ -1,0 +1,134 @@
+* This is document to capture standing up nodes in cardano using divnix and terraform
+- This document belongs with https://github.com/bernokl/nix-ops-node
+- We are going to explore standing up cardano nodes using out existing divnix and terraform pattern
+- The end goal is autonomous deploy of iohk/cardano-node flakes to have relay and then blockproducers.
+
+** Stand up relay node
+- Here is the steps I aim to follow:
+#+begin_example
+- Deploy nixos ec2 instance in aws using terraform
+- Clone the cardano-node repository.
+- In the cardano-node repository, create a new file called configuration.nix.
+- In the configuration.nix file, add the following code:
+       {
+         imports = [
+           "github:input-output-hk/cardano-node?ref=master"
+         ];
+       }
+- Run the following command to build the cardano node:
+       nix build github:input-output-hk/cardano-node?ref=master
+- Once the cardano node is built, you can start it by running the following command:
+       nix run github:input-output-hk/cardano-node?ref=master run
+- Here are some additional details about the instructions above:
+  - The imports section of the configuration.nix file specifies the Nix flakes that the cardano node depends on.
+  - The nix build command builds the cardano node from the Nix flakes that are specified in the imports section.
+  - The nix run command starts the cardano node.
+  - The cardano-cli tool is used to interact with the cardano node.
+#+end_example
+- In my repo I am going to copy the terrafor/cache-server to make my relay-node folder.
+- I am going to strip the terraform to give me just aws instance:
+- I enable envrc with:
+#+begin_src tmux :session s1
+direnv allow .
+#+end_src
+- That loads my aws keys into env
+- TODO: Ongoing reminder that we need to think about credentials.
+- Run init
+#+begin_src tmux :session s1
+aws_terraform_init
+#+end_src
+- Apply:
+#+begin_src tmux :session s1
+aws_terraform_apply
+#+end_src
+- Grab ip from aws-console ssh in
+#+begin_src tmux :session s1
+ssh -i id_rsa.pem root@xx.xx.xx.xx
+#+end_src
+- OK, lets run:
+#+begin_src tmux :session s1
+nix build github:input-output-hk/cardano-node?ref=master
+#+end_src
+- Build was less than 3 minuts lets try the run
+- Lets pass in run
+#+begin_src tmux :session s1
+nix run github:input-output-hk/cardano-node?ref=master run
+#+end_src
+- New error! OO this is why they want you to clone the rope first, lets go look
+#+begin_example
+InvalidYaml (Just (YamlException "Yaml file not found: configuration/cardano/mainnet-config.json"))
+
+cardano-node: YAML exception:
+Yaml file not found: configuration/cardano/mainnet-config.json
+#+end_example
+- Clone repo to our server
+#+begin_src tmux :session s1
+git clone https://github.com/input-output-hk/cardano-node.git
+#+end_src
+- cd
+#+begin_src tmux :session s1
+  cd cardano-node
+#+end_src
+- Lets create the configuration.nix
+#+begin_example
+{
+  imports = [
+    "github:input-output-hk/cardano-node?ref=master"
+  ];
+}
+
+#+end_example
+- Run from inside repo
+#+begin_src tmux :session s1
+nix run github:input-output-hk/cardano-node?ref=master run
+#+end_src
+- Boom, we have a running relay.
+- The above should be very easy to add to user_data in terraform.
+- Lets strip user_data out to file and:
+   - Clone repo
+   - Add our configuration.nix
+   - Build
+   - Run
+- Lets update the main.tf to have this:
+#+begin_example
+ user_data = "${file("start_node.sh")}"
+#+end_example
+- And lets go crate a start_node.sh
+#+begin_example
+#!env bash -xe
+git clone https://github.com/input-output-hk/cardano-node.git &&
+cd cardano-node
+cat << 'EOF' > configuration.nix
+{
+  imports = [
+    "github:input-output-hk/cardano-node?ref=master"
+  ];
+}
+EOF
+yes | nix build github:input-output-hk/cardano-node?ref=master && 
+echo node_done_building > /tmp/outNix
+yes | nix run github:input-output-hk/cardano-node?ref=master run
+#+end_example
+- Now we destroy the host and start the apply again so that start_node.sh can run.
+## current:
+- We can manually build and start a cardano relay by running: aws_terraform_apply
+- Right now the node is up, and I see a  process: nix build github:input-output-hk/cardano-node?ref=master
+- If I strace there is activity, also we are steadily using more disk space.
+- I do not understand why my manual build was so much quicker. 
+- It has been building for almost exactly 2 hours. I do see the load is 12 on 4 cores meaning the cpu is not nearly keeping up. 
+- I think I might have scaled to 2xlarge or even 4xlarge for the build phase in diypool, might have to consider doing the same here.
+- Will leave it to run for now, I wish I had a sense of % done
+
+
+
+- Things to keep in mind:
+#+begin_example
+- Still need to figure out how we set configurations for the node ie whitelist block producer etc
+- wiregaurd/tailscale, iptables
+- network groups in aws
+- still need to think about key management
+#+end_example
+
+* Additional information
+- We can start with a copy of https://github.com/bernokl/nix-ops take learnings from https://github.com/yumiai/docs/blob/main/bernoHome/diypool_apply.org and deploy what we can from: input-output-hk/cardano-node
+- Step 1, properly review what we did in diypool_apply and compare that to information you can find in iohk/cardano-node to see if we can build up list of steps for deploy
