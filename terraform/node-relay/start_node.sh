@@ -8,6 +8,7 @@ cat << 'EOF' > configuration.nix
   ];
 }
 EOF
-yes | nix build github:input-output-hk/cardano-node?ref=master &&
-echo node_done_buiding > /tmp/outNix
-yes | nix run github:input-output-hk/cardano-node?ref=master run
+
+nix build --accept-flake-config github:input-output-hk/cardano-node?ref=master &&
+echo we_got_clean_build > /tmp/outNix
+
