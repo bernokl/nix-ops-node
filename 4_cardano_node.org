@@ -118,8 +118,104 @@ yes | nix run github:input-output-hk/cardano-node?ref=master run
 - It has been building for almost exactly 2 hours. I do see the load is 12 on 4 cores meaning the cpu is not nearly keeping up. 
 - I think I might have scaled to 2xlarge or even 4xlarge for the build phase in diypool, might have to consider doing the same here.
 - Will leave it to run for now, I wish I had a sense of % done
+- It took a couple of hours of google and play, but came up with:
+#+begin_src tmux :session s1
+nix build --accept-flake-config github:input-output-hk/cardano-node?ref=master
+#+end_src
+- I got it to work, but still have some unexpected behaviuor.
+- Let me destroy and rebuild with everything vanilla then try to run nix build --accept-flake-config on clean os
+- YAS, running this manually builds a node I can run in 5 minutes
+#+begin_src tmux :session s1
+nix build --accept-flake-config github:input-output-hk/cardano-node?ref=master
+#+end_src
+- OK going to destroy and build with that in my startup_node.sh
+#+begin_example
+nix build --accept-flake-config github:input-output-hk/cardano-node?ref=master &&
+echo we_got_clean_build > /tmp/outNix
+nix run --accept-flake-config github:input-output-hk/cardano-node?ref=master run
+#+end_example
+- This builds the node! and I think starts it, BUT it does not say running.
+- The matrue solution would be to have the run executed by a daemon service like system.d.
+- At this point I fell into a multi hour investigation into adding traditional /etc/systemd/system/*.service I could run.
+- Turns out nix wants you to define your service in configurattion.nix
+- It seems like you add it to configurion something like:
+#+begin_example
+config.systemd.services.interosEsMdb = {
+  description = "Interos MongoDB+ES log capture";
+  after = ["network.target"];
+  wantedBy = ["multi-user.target"];
 
+  serviceConfig = {
+    # change this to refer to your actual derivation
+    ExecStart = "${interosEsMdb}/bin/syslog-exec.sh";
+    EnvironmentFile = "${interosEsMdb}/lib/es-service.env";
+    Restart = "always";
+    RestartSec = 1;
+  }
+#+end_example
+- Lots of itteration later I ended with this:
+#+begin_example
+  systemd.services.cardano-node-relay-daemon = {
+    enable = true;
+    description = "Cardano relay daemon";
+    after = ["network.target"];
+    wantedBy = ["multi-user.target"];
 
+    serviceConfig = {
+      ExecStart = "${pkgs.nix}/bin/nix run --accept-flake-config github:input-output-hk/cardano-node?ref=master run";
+      Restart = "always";
+      User = "root";
+      WorkingDirectory="/cardano-node/";
+      RestartSec = 1;
+    };
+  };
+#+end_example
+- I also needed to add line to startup_node.sh to start the service
+#+begin_example
+systemctl start cardano-node-relay-daemon.service
+#+end_example
+
+- Nice cheat to find aws ec2 external ip, replace running with tag or other metadata you car about
+#+begin_src tmux :session s1
+aws ec2 describe-instances --filters 'Name=instance-state-name,Values=running' --query 'Reservations[*].Instances[*].[InstanceId,PublicIpAddress]' --output text
+#+end_src
+- returns:
+#+begin_example
+i-01a7e8d4e89049894     13.239.136.44
+#+end_example
+- And on this host I see the daemon running:
+#+begin_example
+> systemctl status cardano-node-relay-daemon.service 
+● cardano-node-relay-daemon.service - Cardano relay daemon
+     Loaded: loaded (]8;;file://ip-172-31-19-21.ap-southeast-2.compute.internal/etc/systemd/system/cardano-node-relay-daemon.service/etc/systemd/system/cardano-node-relay-daemon.service]8;;; enabled; preset: enabled)]8;;
+     Active: active (running) since Mon 2023-05-08 13:47:51 UTC; 4h 24min ago
+   Main PID: 2101 (cardano-node)
+         IP: 15.2G in, 157.6M out
+         IO: 316.0K read, 18.3G written
+      Tasks: 16 (limit: 9155)
+     Memory: 6.1G
+        CPU: 8h 50min 11.556s
+     CGroup: /system.slice/cardano-node-relay-daemon.service
+             └─2101 /nix/store/0ndig34c9qizj3g4z1s1scwk3pxcvfzn-cardano-node-exe-cardano-node-8.0.0/bin/cardano-node>
+
+May 08 18:12:16 ip-172-31-19-21.ap-southeast-2.compute.internal nix[2101]: [ip-172-3:cardano.node.ChainDB:Notice:35]>
+May 08 18:12:18 ip-172-31-19-21.ap-southeast-2.compute.internal nix[2101]: [ip-172-3:cardano.node.ChainDB:Notice:35]>
+May 08 18:12:19 ip-172-31-19-21.ap-southeast-2.compute.internal nix[2101]: [ip-172-3:cardano.node.ChainDB:Notice:35]>
+May 08 18:12:20 ip-172-31-19-21.ap-southeast-2.compute.internal nix[2101]: [ip-172-3:cardano.node.ChainDB:Notice:35]>
+May 08 18:12:21 ip-172-31-19-21.ap-southeast-2.compute.internal nix[2101]: [ip-172-3:cardano.node.ChainDB:Notice:35]>
+May 08 18:12:23 ip-172-31-19-21.ap-southeast-2.compute.internal nix[2101]: [ip-172-3:cardano.node.ChainDB:Notice:35]>
+May 08 18:12:24 ip-172-31-19-21.ap-southeast-2.compute.internal nix[2101]: [ip-172-3:cardano.node.ChainDB:Notice:35]>
+May 08 18:12:25 ip-172-31-19-21.ap-southeast-2.compute.internal nix[2101]: [ip-172-3:cardano.node.ChainDB:Notice:35]>
+May 08 18:12:26 ip-172-31-19-21.ap-southeast-2.compute.internal nix[2101]: [ip-172-3:cardano.node.ChainDB:Notice:35]>
+May 08 18:12:28 ip-172-31-19-21.ap-southeast-2.compute.internal nix[2101]: [ip-172-3:cardano.node.ChainDB:Notice:35]>
+#+end_example
+
+#current
+- We can now deploy a cardano-relay in AWS using, terraform init, terraform user_data (start_node.sh) and configuration.nix
+- The node gets started as a service we define in configuration.nix "systemctl status cardano-node-relay-daemon.service"
+- Next step is to document and test what we have.
+
+  
 
 - Things to keep in mind:
 #+begin_example
