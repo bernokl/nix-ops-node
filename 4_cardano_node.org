@@ -110,7 +110,6 @@ echo node_done_building > /tmp/outNix
 yes | nix run github:input-output-hk/cardano-node?ref=master run
 #+end_example
 - Now we destroy the host and start the apply again so that start_node.sh can run.
-## current:
 - We can manually build and start a cardano relay by running: aws_terraform_apply
 - Right now the node is up, and I see a  process: nix build github:input-output-hk/cardano-node?ref=master
 - If I strace there is activity, also we are steadily using more disk space.
