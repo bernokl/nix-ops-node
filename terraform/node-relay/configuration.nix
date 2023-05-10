@@ -54,8 +54,8 @@ in {
         exit 0
       fi
 
-      # otherwise authenticate with tailscale
-#      ${tailscale}/bin/tailscale up --ssh -authkey tskey-auth-kmcS2Y1CNTRL-QnXeJhyWdmNebfaVyEskuNt9MNn2ZMjCP
+      # authenticate with tailscale
+      # Note they key you use is critical for re-use, auth, auto-register and tages
       ${tailscale}/bin/tailscale up --ssh -authkey tskey-auth-xxxxxxxxxxxxxxx
     '';
 };
@@ -66,6 +66,10 @@ in {
     trustedInterfaces = [ "tailscale0" ];
     allowedUDPPorts = [ config.services.tailscale.port ];
   };
+
+  # Note this will be your magic-dns name for the machine in tailscale
+  networking.hostName = "aws-1";
+  networking.domain = "husky-ostrich.ts.net";
 
   environment.systemPackages = with pkgs; [
     git

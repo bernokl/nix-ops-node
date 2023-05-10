@@ -209,20 +209,95 @@ May 08 18:12:25 ip-172-31-19-21.ap-southeast-2.compute.internal nix[2101]: [ip-1
 May 08 18:12:26 ip-172-31-19-21.ap-southeast-2.compute.internal nix[2101]: [ip-172-3:cardano.node.ChainDB:Notice:35]>
 May 08 18:12:28 ip-172-31-19-21.ap-southeast-2.compute.internal nix[2101]: [ip-172-3:cardano.node.ChainDB:Notice:35]>
 #+end_example
+- Robert suggeted I focus on tailscale integration next as he already had the template on hokioi
+- Here is the updates I made to get the ec2 instance running tailscale and connecting to yumi network
+#+begin_example
+ { config, lib, pkgs, modulesPath, ... }:
++let
++   system.autoUpgrade.channel = "https://nixos.org/channels/nixos-unstable";
++   nixos-unstable = import <nixos-unstable> {};
+ 
+-{
++in {
+   imports = [ "${modulesPath}/virtualisation/amazon-image.nix" ];
+ 
+   ec2.hvm = true;
+@@ -26,10 +29,47 @@
+     };
+   };
+ 
++ services.tailscale.enable = true;
++
++ systemd.services.tailscale-autoconnect = {
++    description = "Automatic connection to Tailscale";
++
++    # make sure tailscale is running before trying to connect to tailscale
++    after = [ "network-pre.target" "tailscale.service" ];
++    wants = [ "network-pre.target" "tailscale.service" ];
++    wantedBy = [ "multi-user.target" ];
++
++    # set this service as a oneshot job
++    serviceConfig.Type = "oneshot";
++
++    # have the job run this shell script
++    script = with pkgs; ''
++      # wait for tailscaled to settle
++      sleep 2
++
++      # check if we are already authenticated to tailscale
++      status="$(${tailscale}/bin/tailscale status -json | ${jq}/bin/jq -r .BackendState)"
++      if [ $status = "Running" ]; then # if so, then do nothing
++        exit 0
++      fi
++
++      # otherwise authenticate with tailscale
+#
++      ${tailscale}/bin/tailscale up --ssh -authkey tskey-auth-########
++    '';
++};
++
++  networking.firewall = {
++    checkReversePath = "loose";
++    enable = true;
++    trustedInterfaces = [ "tailscale0" ];
++    allowedUDPPorts = [ config.services.tailscale.port ];
++  };
++
++  networking.hostName = "aws-1";
++  networking.domain = "husky-ostrich.ts.net";
+
+   environment.systemPackages = with pkgs; [
+     git
+     vim
+     htop
++    tailscale
+     lsof
+   ];
+ }
+
+#+end_example
+- Note we give the machine a networking.hostName, that registers the name we want for this machine in tailscale
+- Also VERY important once it is connected to tailscale your ssh sessions over the 10. network with be authenticated through tailscale.
+- This is a very important bennefit.
+- Also very important, the authkey used needs to be set to be ephemiral, pre-authenticate the hosts and assign tags we want for the machines.
+- This makes management very simple, but needs to be carefully managed.
+- We will integrate SOPS/1Password/Key-store to hold keys we can then hydrate on host with env-vars in our session.
 
 #current
 - We can now deploy a cardano-relay in AWS using, terraform init, terraform user_data (start_node.sh) and configuration.nix
 - The node gets started as a service we define in configuration.nix "systemctl status cardano-node-relay-daemon.service"
+- The machine is also autoconnected to the yumi tailscale network.
 - Next step is to document and test what we have.
+- Once testing is done we will pivot to terraform/aws structure and account management strategy formalization
 
   
 
 - Things to keep in mind:
 #+begin_example
 - Still need to figure out how we set configurations for the node ie whitelist block producer etc
-- wiregaurd/tailscale, iptables
-- network groups in aws
-- still need to think about key management
+- iptables
+- networks in aws, do we allow any internal communication through aws or will everything flow through tailscale?
+- still need to think about key management, aegis/sops
 #+end_example
 
 * Additional information
