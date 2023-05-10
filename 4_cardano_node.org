@@ -282,6 +282,75 @@ May 08 18:12:28 ip-172-31-19-21.ap-southeast-2.compute.internal nix[2101]: [ip-1
 - Also very important, the authkey used needs to be set to be ephemiral, pre-authenticate the hosts and assign tags we want for the machines.
 - This makes management very simple, but needs to be carefully managed.
 - We will integrate SOPS/1Password/Key-store to hold keys we can then hydrate on host with env-vars in our session.
+- Trying to do some testing, lets start with what we can see on the node:
+#+begin_example
+journalctl -u cardano-node-relay-daemon.service
+
+May 10 18:08:04 aws-1 nix[2100]: Event: LedgerUpdate (HardForkUpdateInEra S (S (Z (WrapLedgerUpdate {unwrapLedgerUpdate = ShelleyUpdatedProtocolUpdates []}))))
+May 10 18:08:04 aws-1 nix[2100]: [aws-1:cardano.node.ChainDB:Notice:35] [2023-05-10 18:08:04.96 UTC] Chain extended, new tip: 2198c40091993baed54b4638473327b0b77c5dccaa56768690f5b56>
+May 10 18:08:06 aws-1 nix[2100]: [aws-1:cardano.node.ChainDB:Notice:35] [2023-05-10 18:08:06.21 UTC] Chain extended, new tip: 2e7ccf635d45201aaf52c5a2e7e10f7c5b90a2ca5ed10356210859e>
+May 10 18:08:07 aws-1 nix[2100]: [aws-1:cardano.node.ChainDB:Notice:35] [2023-05-10 18:08:07.46 UTC] Chain extended, new tip: 18ba572b54363a6bcb43bccb283828ab559cd5ddf7d73c2b0c07c51>
+May 10 18:08:08 aws-1 nix[2100]: [aws-1:cardano.node.ChainDB:Notice:35] [2023-05-10 18:08:08.71 UTC] Chain extended, new tip: 87cfa4a2f2258217adbde872e2ab53906f43d95e1f9fbbbc4dc362a>
+May 10 18:08:09 aws-1 nix[2100]: [aws-1:cardano.node.ChainDB:Notice:35] [2023-05-10 18:08:09.53 UTC] Chain extended, new tip: 8add136563b0c36616f42ad52815e3c666be1b8b087e4268949395c>
+May 10 18:08:09 aws-1 nix[2100]: Event: LedgerUpdate (HardForkUpdateInEra S (S (Z (WrapLedgerUpdate {unwrapLedgerUpdate = ShelleyUpdatedProtocolUpdates [ProtocolUpdate {protocolUpda>
+May 10 18:08:09 aws-1 nix[2100]: [aws-1:cardano.node.ChainDB:Notice:35] [2023-05-10 18:08:09.54 UTC] Chain extended, new tip: e6878f21c35b5c9c233bf54207c28dbeb0743c6cf19d1468afc78c6>
+May 10 18:08:10 aws-1 nix[2100]: [aws-1:cardano.node.ChainDB:Notice:35] [2023-05-10 18:08:10.79 UTC] Chain extended, new tip: 92fc5c7b7e6b8a84623787b2b3a52400d9388958258e7cdf57c9d6f>
+May 10 18:08:12 aws-1 nix[2100]: [aws-1:cardano.node.ChainDB:Notice:35] [2023-05-10 18:08:12.04 UTC] Chain extended, new tip: f02680481aa08d0d53b4d1574d063fcba04d8b10b8e91ef07c52737>
+May 10 18:08:13 aws-1 nix[2100]: [aws-1:cardano.node.ChainDB:Notice:35] [2023-05-10 18:08:13.29 UTC] Chain extended, new tip: 83fdc9ce9b078a25880964ab7c87bf5e66a73849fbe06918580f738>
+#+end_example
+- That seems positive confirmation that we are participating in the network traffic.
+- Going to try to query the node using cardano-cli turns out to be a pain.
+- First I decide to install it like this:
+#+begin_example
+git clone https://github.com/input-output-hk/cardano-node.git
+cd cardano-node/cardano-cli 
+cabal update 
+cabal build
+cabal install
+/root/.cabal/bin/cardano-cli --version
+#returns: cardano-cli 8.1.0 - linux-x86_64 - ghc-8.10
+/root/.cabal/bin/cardano-cli query tip --mainnet
+# returns Missing --socket-path SOCKET_PATH
+#+end_example
+- I have been trying to find the socket path for this node for too long.
+- Next options is to specify --socket-path when I start it up or keep trying to resolve this absurd roadblock.
+- I do feel a bit abstracted from what I have deployed I am sure there has to be default socket path, I even tried mlocate for
+- I noticed two ports bound to 127.0.0.1, running curl 127.0.0.1:12788 I can see there is a web page
+- Lets forward it with socat so I can hit that address over tailscale.
+#+begin_src tmux :session s1
+nix-env -i socat
+  socat TCP-LISTEN:5000,reuseaddr,fork TCP:127.0.0.1:12788
+#+end_src
+- Now I go to my laptop that is logged into tailscale and visit http://100.xx.xx.72:5000 
+- YAS I have a very nice dashboard with residency (memory?) allocation rate and productivity. I am not 100% what these relate to but they seem healthy.
+- Mmmm I feel like I might want to leave the cardano-cli to someone who understands it better like Jack or Robert.
+
+#current
+- We can now deploy a cardano-relay in AWS using, terraform init, terraform user_data (start_node.sh) and configuration.nix
+- The node gets started as a service we define in configuration.nix "systemctl status cardano-node-relay-daemon.service"
+- The new machine registers itself in tailscale, you can use tailscales to authenticate ssh over the 10. network, you can find machine by ip or networking.hostName
+- I can see healty logs with work the node is doing, I can see a dashboard with healty metrics, I still need to query and cli interact with the server
+- Next step is cli testing of the node. I think I will ask for help from Jack for this one
+
+*** Troubleshooting tips
+- Don't forget to do tcpdump to see where it is trying to get artifacts from
+
+- Things to keep in mind:
+#+begin_example
+- Still need to figure out how we set configurations for the node ie whitelist block producer etc
+- iptables
+- network groups in aws
+- still need to think about key management
+#+end_example
+
+
+
+* Next steps. 
+** Current
+  - Document and test
+  - What else is needed? wiregaurd, key management, inventory management, NAT-Gateway, elb(?)
+  - Add final parts to make prod ready and move on to block-producer
+** Archive of old steps, this is all done
 
 #current
 - We can now deploy a cardano-relay in AWS using, terraform init, terraform user_data (start_node.sh) and configuration.nix
