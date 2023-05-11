@@ -1,0 +1,163 @@
+** Terraform tooling research
+- Tools reccomended:
+  - terraform
+  - terragrunt
+  - aws-cli
+  - aws2-wrap
+  - 
+*** Terraform
+- Should we keep terraform simple, single file so using configuration.nix user_data.sh remains focus for easy migration to other provicers.
+- Well understood, many ways to install via nix
+- There is a few nix terraform relationships Robert has pointed to, we will evaluate them as need arises.
+- Current using very basic ec2/aws main to spin up desired ec2 instance, apply repo configuration.nix, run or user_date.sh (startup) script.
+- Goal:
+- Manage account creation - sandbox, dev, test, prod etc
+- Manage users? We can create and then assign users to groups for permission, what is our oauth for aws login?
+- Terraform repo should be inventory of machies we have up, pattern is boiler plate tf nixos machine provisioning with configuration.nix/user_data customization. 
+- What common storage or networking do we want to manage in aws, once a machine has tailscale it could only allow access from single bastion host as backup or do we set up ssm?
+- Backups snapshots?
+- What monitoring do we have? were do we want to inject it in the build process, new nodes should register themselves
+
+*** Terragrunt
+- Source: github.com/gruntwork-io/terragrunt
+- Terragrunt is a thin wrapper around Terraform that provides extra tools for keeping your Terraform configurations DRY, working with multiple Terraform modules, and managing remote state.
+- Examples of how Terragrunt can be used:
+  - To keep your Terraform configurations DRY, you can use Terragrunt to define a single configuration file that defines the common settings for all of your Terraform modules. This can help to reduce the amount of code that you need to write and maintain.
+  - To work with multiple Terraform modules, you can use Terragrunt to create a single Terragrunt configuration file that defines all of your Terraform modules. This can help to simplify the management of your Terraform modules and make it easier to track changes.
+  - To manage remote state, you can use Terragrunt to define a single Terragrunt configuration file that defines the location of your Terraform state. This can help to simplify the management of your Terraform state and make it easier to share state between different Terraform configurations
+  - Lets set up example
+#+begin_example
+infrastructure-live
+├── terragrunt.hcl(?)
+├── sandbox
+│   ├── terragrunt.hcl
+│   ├── relay-1
+│   │   └── terragrunt.hcl
+│   ├── relay-2
+│   │   └── terragrunt.hcl
+│   ├── relay-3
+│   │   └── terragrunt.hcl
+│   └── producer
+│       └── terragrunt.hcl
+├── dev
+│   ├── terragrunt.hcl
+│   ├── relay-1
+│   │   └── terragrunt.hcl
+│   ├── relay-2
+│   │   └── terragrunt.hcl
+│   ├── relay-3
+│   │   └── terragrunt.hcl
+│   └── producer
+│       └── terragrunt.hcl
+└── test
+    ├── terragrunt.hcl
+    ├── relay-1
+    │   └── terragrunt.hcl
+    ├── relay-2
+    │   └── terragrunt.hcl
+    ├── relay-3
+    │   └── terragrunt.hcl
+    └── mysql
+        └── terragrunt.hcl
+#+end_example
+- At the environment level the hcl file will be the remote-state configuration for that environment
+#+begin_example
+remote_state {
+  backend = "s3"
+  config = {
+    bucket         = "my-terraform-state-sandbox"
+    key            = "${path_relative_to_include()}/terraform.tfstate"
+    region         = "ap-southeast-2"
+    encrypt        = true
+    dynamodb_table = "my-lock-table-sandbox"
+  }
+}
+#+end_example
+- I need to look deeper into dynamodb to understand if I want that table, I only remember usiung s3
+- This is what the relay files would look like:
+#+begin_example
+include {
+  path = find_in_parent_folders()
+}
+
+terraform {
+  source = "git::git@github.com:my-org/terraform-modules.git//relay-node?ref=v0.0.1"
+}
+
+inputs = {
+  instance_count = 2
+  instance_type  = "c5.xlarge"
+}
+#+end_example
+- The include block tells Terragrunt to use the remote_state configuration
+- I think I can make that inputs point to single s3 provisioning main.tf file instead of repo, I have to think of pro/con for local vs remote
+- I need to play with this a bit to test it for our use-case, env level hcl might contain bulk of our machine provisioning with sub folder customization for keys and other app specific customization
+*** aws-cli
+- Pretty self explanitory, lots of ways to get this set up locally. How much provisioning/documentation do we need for this?
+- I currently have envrc looking at /hom/[user]/.aws_config_nix what other customizations do we want to build into user level how do we want to handle this setup?
+- 
+*** aws2-wrap
+- cli-auth will be done via aws-wrap or do we want to use SOPS env vars for this?
+- The first thing is that this gives you simple way to refer to multiple profiles on one machine
+- The following will create those $AWS env variables and allow you to log into the target profile
+#+begin_example
+# Create a temporary profile in the $AWS_CONFIG_FILE and $AWS_SHARED_CREDENTIALS_FILE file.
+aws-wrap --profile <profile-name>
+
+# Export the AWS SSO credentials.
+aws-wrap --export
+
+# Use the credentials via . aws/config.
+export AWS_PROFILE=<profile-name>
+terraform init
+terraform apply
+#+end_example
+- The second big advantage is that it would allow us to use aws sso credentials with tools that do not understand sso.
+- Your config file would be structured something like this
+#+begin_example
+[default]
+region = us-east-1
+output = json
+
+[profile <profile-name>]
+sso_account_id = <account-id>
+sso_region = <region>
+sso_client_id = <client-id>
+sso_client_secret = <client-secret>
+sso_username = <username>
+#+end_example
+- Here is example config I had:
+#+begin_example
+[prrofile sandbox_power_users]
+sso_start_url = https://company.awsapps.com/start/#
+sso_region = ap-southeast-2
+sso_account_id = [account id of the power user]
+sso_role_name = [ name or the power user role]
+region = ap-southeast-2
+output = json
+[prrofile default]
+sso_start_url = https://company.awsapps.com/start/#
+sso_region = ap-southeast-2
+sso_account_id = [account id of the power user I am aliasing in as]
+sso_role_name = [ name or the power user role]
+region = ap-southeast-2
+output = json
+#+end_example
+- I switched between these profiles with simple functions I inclueded in my .bashrc:
+#+begin_example
+sandbox-simple() {
+  export AWS_PROFILE=sandbox_power_users
+  AWS_REGION=ap-southeast-2
+  AWS_DEFAULT_REGION=ap-southeast-2
+}
+
+sandbox() {
+  # export AWS_PROFILE=_sandbox_power users
+  eval "$(aws2-wrap --profile sys_ops_power_users-xxxxxxxxxxxxx --export)"
+  AWS_REGION=ap-southeast-2
+  AWS_DEFAULT_REGION=ap-southeast-2
+}
+#+end_example
+*** Conclusion
+- I will set up terragrunt structure for the node we currently have so we can share state accross users and manage provisioning more.
+- I already have aws-cli working and will leave aws2-wrap until we can decide what we are doing with sops, there might be better integration and profile management.
