@@ -1,3 +1,7 @@
+terraform {
+  backend "s3" {}
+}
+
 provider "aws" {
     region = "ap-southeast-2"
 }
@@ -40,13 +44,14 @@ resource "aws_key_pair" "generated_key" {
 }
 
 resource "aws_instance" "machine" {
-    ami             = module.nixos_image.ami
-    instance_type   = "c5.xlarge"
-    security_groups = [ aws_security_group.ssh_and_egress.name ]
-    key_name        = aws_key_pair.generated_key.key_name
-
+    ami                    = module.nixos_image.ami
+    instance_type          = "${var.aws_instance_type}"
+    vpc_security_group_ids = [ aws_security_group.ssh_and_egress.id ]
+    key_name               = aws_key_pair.generated_key.key_name
+    subnet_id              = "subnet-099bdb73dcd32aad6"
+    associate_public_ip_address = true
     root_block_device {
-        volume_size = 50 # GiB
+        volume_size  = 50 # GiB
     }
     user_data = "${file("start_node.sh")}"
 }
@@ -62,3 +67,7 @@ module "deploy_nixos" {
     ssh_private_key_file = local_sensitive_file.machine_ssh_key.filename
     ssh_agent = false
 }
+
+
+
+variable "aws_instance_type" {}

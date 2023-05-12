@@ -56,7 +56,7 @@ in {
 
       # authenticate with tailscale
       # Note they key you use is critical for re-use, auth, auto-register and tages
-      ${tailscale}/bin/tailscale up --ssh -authkey tskey-auth-xxxxxxxxxxxxxxx
+      ${tailscale}/bin/tailscale up --ssh -authkey tskey-auth-xxxxx
     '';
 };
 

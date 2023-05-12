@@ -12,3 +12,4 @@ nix-profile*
 *.tfstate*
 *.swo
 *.pem
+.terragrunt-cache/
