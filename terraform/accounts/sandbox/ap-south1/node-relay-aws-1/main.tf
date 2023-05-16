@@ -3,7 +3,7 @@ terraform {
 }
 
 provider "aws" {
-    region = "ap-southeast-2"
+    region = "ap-south-1"
 }
 # TODO: AUTOMATE THIS IMAGE LOOKUP, or find cache with aws/ami-/region table
 # ref at the end is simple commit hash ie "git log" commit hash
@@ -48,7 +48,7 @@ resource "aws_instance" "machine" {
     instance_type          = "${var.aws_instance_type}"
     vpc_security_group_ids = [ aws_security_group.ssh_and_egress.id ]
     key_name               = aws_key_pair.generated_key.key_name
-    subnet_id              = "subnet-099bdb73dcd32aad6"
+    subnet_id              = "subnet-0fef5edaf38635860"
     associate_public_ip_address = true
     root_block_device {
         volume_size  = 50 # GiB
