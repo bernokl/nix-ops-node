@@ -68,7 +68,7 @@ in {
   };
 
   # Note this will be your magic-dns name for the machine in tailscale
-  networking.hostName = "aws-1";
+  networking.hostName = "aws-ap-se-2-2";
   networking.domain = "husky-ostrich.ts.net";
 
   environment.systemPackages = with pkgs; [
