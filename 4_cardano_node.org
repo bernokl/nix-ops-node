@@ -324,12 +324,108 @@ nix-env -i socat
 - YAS I have a very nice dashboard with residency (memory?) allocation rate and productivity. I am not 100% what these relate to but they seem healthy.
 - Mmmm I feel like I might want to leave the cardano-cli to someone who understands it better like Jack or Robert.
 
+  
 #current
 - We can now deploy a cardano-relay in AWS using, terraform init, terraform user_data (start_node.sh) and configuration.nix
 - The node gets started as a service we define in configuration.nix "systemctl status cardano-node-relay-daemon.service"
 - The new machine registers itself in tailscale, you can use tailscales to authenticate ssh over the 10. network, you can find machine by ip or networking.hostName
 - I can see healty logs with work the node is doing, I can see a dashboard with healty metrics, I still need to query and cli interact with the server
 - Next step is cli testing of the node. I think I will ask for help from Jack for this one
+
+** Update terraform structure of nix-ops-node to implement terragrunt.
+- First lets add some folders: accounts/sandbox/ap-southeast2
+- Now we move node-relay into that region ie accounts/sandbox/ap-southeast2/node-relay-1
+- The 5 files in that directory (main.tf, terragrunt.hcl, configuration.nix, start_node.sh, variables.tf) will allow you to spin up a machine
+- Here is our layout:
+#+begin_example
+
+terraform
+├── modules
+│   ├ node-relay (goal would be to set common features here)
+│   ├── main.tf
+│   ├── variables.tf
+├── accounts
+│   ├ sandbox
+│   ├── terragrunt.hcl(This sets up our .tfstate in s3, long term this would keep common configs like, machine type or other sandbox components like security_groups?)
+│   ├── ap-southeast-2
+│   ├────── terragrunt.hcl(I did not keep, but do we have common components that would be here?) 
+│   ├────── node-relay-1 (This works as is in the repo)
+│   ├───────  main.cf (This is self contained and works without the module)
+│   ├───────  configuration.nix (This contains initial machine state including tailscale and setting up iohk/cardano-node service)
+│   ├───────  start_node.sh ( This imports cardano-node referer, builds the flake and then starts the service we set up in configuration.nix)
+│   ├───────  terragrunt.hcl (This passes in variables, for this POC it just passes in machine type, but can be expanded.
+│   ├───────  variables.tf (Defines the variables used by the module)
+│   ├────── node-relay-2 (This is experiment to be more DRY, it would mean less duplication of code in main.tf by re-using what we have in modules)
+│   ├───────  main.cf (Sources modules/node-relay and passes in variblees it needs.)
+│   ├───────  configuration.nix (Same as above)
+│   ├───────  start_node.sh (Same as above)
+│   ├───────  terragrunt.hcl (sources modules/node-relay *note the source in main.tf should not be needed, but this is still in testing, provides values to varibles.
+│   ├───────  variables.tf (Defines the variables used by the module)
+│   ├── ap-southeast-2
+│   ├────── terragrunt.hcl(I did not keep, but do we have common components that would be here?) 
+│   ├────── node-relay-1 (This works as is in the repo)
+│   ├───────  main.cf (This is self contained and works without the module)
+│   ├───────  configuration.nix (This contains initial machine state including tailscale and setting up iohk/cardano-node service)
+│   ├───────  start_node.sh ( This imports cardano-node referer, builds the flake and then starts the service we set up in configuration.nix)
+│   ├───────  terragrunt.hcl (This passes in variables, for this POC it just passes in machine type, but can be expanded.
+│   ├───────  variables.tf (Defines the variables used by the module)
+
+#+end_example
+- Before you can deploy anything in the repo you will need to replace the tailscale key in configuration.nix and the whitelist ip address to one that will ssh in. 
+- TODO: Decide if we want to allow ssh outside tailscale perhaps not? The applied machine is accessible from tailscale, we can alwaays manually add whiteliting if we can not get to it from tailscale
+- Apply your changes with:
+#+begin_src tmux :session s1
+terragrunt init &&
+terragrunt apply
+#+end_src
+- node-relay-1 works as expected we still manually add TS-key, whitelist ip and end up with SSH key locally.
+- TODO: incorporate sops to handle keys and secrets
+- node-relay-2 is WORKING! (can you tell it was a pain?)
+- node-relay-2 is more DRY, main.tf is only call out to the module. 
+- Next I am going to create copies of relay-1 in 2 other regions provide each with unique name and key see how we can interact between them.
+- Our 3 regions for this proof of concept (can always change in new regions)
+#+begin_example
+ap-southeast-2 (Asia Pacific Sydney)
+eu-north-1 (Europe Stockholm) 
+ap-south-1 (Asia Pacific Mumbai)
+#+end_example
+- Here are the steps to create a new region:
+- Copy a known good directory - I am copying sanbox/ap-southeast-2 naming the copy ap-south-1
+- I am going to re-use only structure of node-relay-1 because I only need one node in each region, and architectually I am not sold on making nodes into a module, I want this to be easilly replicated to other infrastructures. I am wondering if the directory structure is too complex. I am keeping it for ease of remote state management, but I am open to improvement suggestions.
+- main.tf:
+#+begin_example
+- You will need to update the provider.region to your new region
+- Make sure the nix_image.source has reference to a commit that has an image specified for the region you are setting up
+- Make sure any ip's you need whitelisted is in aws_security_group.ssh_and_egress.from_port=22 cidr_blocks, 
+- TODO if it is a relay-node we should be able to reach over tailscale then perhaps we want to get rid of port 22 whitelisting in aws_security_group
+- For aws_instance.machine.subnet_id you will currently need to go look this up in aws-console-vpc-subnets
+#+end_example
+- For the above we have a dependency on keeping up the images list in a fork of https://github.com/nix-community/terraform-nixos.git we host.
+- TODO: There should be automation around https://github.com/nix-community/terraform-nixos/blob/master/aws_image_nixos/url_map.tf it is currently a manual update of the copy our code points to.
+- configuration.nix:
+#+begin_example
+- Make sure you are using the right tskey-auth-xxx 
+- Update the networking.hostName 
+#+end_example
+- We will add a .envrc to this folder to update our AWS_REGION for ap-south1 I did:
+#+begin_example
+# I source the original envrc that gets unloaded when I cd in here
+source ../../../../.envrc
+# I add the region we will be using
+export AWS_REGION=ap-south-1
+#+end_example
+- This works to deploy a new node to ap-south-1, lets do the same for eu-north-1
+- Made copy of ap-south1 to create eu-north1
+- Made the same updates to main.tf, configuration.nix and .envrc
+- I set my region in aws by running "direnv allow ." from the eu-north1/
+- I confirm I am pointing to the right region with
+#+begin_src tmux :session s1
+aws configure get region
+#+end_src
+- Next I run terragrunt init/apply
+- And I see my new aws-eu-n-1-1 node in tailscale, and YUP it has a running node.
+
+ 
 
 *** Troubleshooting tips
 - Don't forget to do tcpdump to see where it is trying to get artifacts from
