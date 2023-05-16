@@ -35,7 +35,7 @@ resource "tls_private_key" "state_ssh_key" {
 
 resource "local_sensitive_file" "machine_ssh_key" {
     content = tls_private_key.state_ssh_key.private_key_pem
-    filename          = "${path.module}/id_rsa.pem"
+    filename          = "${path.root}/id_rsa.pem"
     file_permission   = "0600"
 }
 
@@ -63,7 +63,8 @@ output "public_dns" {
 
 module "deploy_nixos" {
     source = "git::https://github.com/bernokl/terraform-nixos.git//deploy_nixos?ref=5f5a0408b299874d6a29d1271e9bffeee4c9ca71"
-    nixos_config = "${path.module}/configuration.nix"
+    #nixos_config = "${path.module}/configuration.nix"
+    nixos_config = "${path.root}/configuration.nix"
     target_host = aws_instance.machine.public_ip
     ssh_private_key_file = local_sensitive_file.machine_ssh_key.filename
     ssh_agent = false
