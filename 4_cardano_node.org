@@ -425,6 +425,413 @@ aws configure get region
 - Next I run terragrunt init/apply
 - And I see my new aws-eu-n-1-1 node in tailscale, and YUP it has a running node.
 
+** Block producer 
+- Tomorrow morning will set up folder structure using relay, update to create producer
+- Here is the steps bard.google.com comes up with:
+- Notice it is lying there is no install.sh for the cardano node, but I do see cardano-node.cabal, I will stick with flake build run.
+#+begin_example
+The recommended steps for deploying a Cardano block producer according to the Cardano node repository on GitHub are as follows:
+
+- Install the latest version of Cardano node.
+- Create a new directory for your block producer node.
+- Copy the config.yaml file from the Cardano node repository to your new directory.
+- Edit the config.yaml file to specify your pool's details, such as its name, ID, and keys.
+- Start the relay node.
+- Start the block producer node.
+- The following are some additional details about each step:
+
+- To install the latest version of Cardano node, you can use the following command:
+      Code snippet
+      curl -sSLO https://raw.githubusercontent.com/input-output-hk/cardano-node/master/install.sh
+      bash install.sh
+      Use code with caution. Learn more
+      To create a new directory for your block producer node, you can use the following command:
+      Code snippet
+      mkdir my-pool
+      Use code with caution. Learn more
+- To copy the config.yaml file from the Cardano node repository to your new directory, you can use the following command:
+      Code snippet
+      cp https://raw.githubusercontent.com/input-output-hk/cardano-node/master/config.yaml my-pool
+      Use code with caution. Learn more
+- To edit the config.yaml file, you can use a text editor, such as Nano or Vim. In the config.yaml file, you will need to specify your pool's details, such as its name, ID, and keys. The following is an example of a config.yaml file for a pool named "My Pool":
+      Code snippet
+      relay-node:
+        host: "localhost"
+        port: 3001
+      
+      block-producer-node:
+        host: "localhost"
+        port: 3002
+      
+      pool-key: "/path/to/pool/key.skey"
+      
+      vrf-key: "/path/to/vrf/key.skey"
+      Use code with caution. Learn more
+- To start the relay node, you can use the following command:
+      Code snippet
+      cardano-node \
+        --config config.yaml \
+        --relay-node \
+        --host localhost \
+        --port 3001 \
+        &> relay.log &
+      Use code with caution. Learn more
+- To start the block producer node, you can use the following command:
+     Code snippet
+     cardano-node \
+       --config config.yaml \
+       --block-producer-node \
+       --host localhost \
+       --port 3002 \
+       --pool-key /path/to/pool/key.skey \
+       --vrf-key /path/to/vrf/key.skey \
+       &> block-producer.log &
+     Use code with caution. Learn more
+- Once you have completed these steps, your Cardano block producer node will be deployed and running. You can check the status of your block producer node using the following command:
+      Code snippet
+      cardano-cli query block-producer-status
+      Use code with caution. Learn more
+- This will output the following information:
+Code snippet
+Name: My Pool
+Pool ID: xyz1234567890abcdefghijklmnopqrstuv
+Status: Running
+Active Stake: 1000000000 lovelace
+Last Epoch: 1234567890
+Last Slot: 1234567890
+#+end_example
+- I think I can update the files for the block producer in the cloned repo.
+- Ok, lets set up a new directory in ap-southeast2 for our block producer, making a copy of node-relay-aws-1
+- Lets update configuration.nix
+#+begin_example
+# I update the following service name and description.
+  systemd.services.cardano-node-block-producer-daemon = {
+    enable = true;
+    description = "Cardano block producer daemon";
+# Need to figure if I need to pass flags into the nix run on the ExecStart line
+    serviceConfig = {
+      ExecStart = "${pkgs.nix}/bin/nix run --accept-flake-config github:input-output-hk/cardano-node?ref=master run";
+# New tailscale auth key
+# Note I destroyed all existing keys and set up a new one for this. We have been very lax with keys will harden when we move out of sandbox
+      ${tailscale}/bin/tailscale up --ssh -authkey tskey-auth-xxxxx
+# Update hostName
+# TODO: parhaps go back to relays and add "-r-" to indicate relay, adding "-bp-" to this one for now.
+  networking.hostName = "aws-ap-se-bp-2-1";
+#+end_example
+- For start_node.sh I am going to comment out nix build and systemctl start so I can manually play with them.
+- And updates to main.tf:
+#+begin_example
+# I am going to completely remove 22 whitelisting from security_groups:
+-     ingress {
+-         from_port   = 22
+-         to_port     = 22
+-         protocol    = "tcp"
+-         cidr_blocks = [ "xx.xx.xx.xx/32" ]
+-     }
+# TODO: Do we want to allow tls_ssh keys on block producers? Only leave ssm access? Leaving it alone for now
+# Do we want to give block producers their own subnet? interconectivity is through tailscale so cant see downside of seperation. Leaving it for current testing
+# TODO: Decide on relay vs bp subnets
+#+end_example
+- Leaving terragrunt.tf alone, it only contains instance_type
+- Lets init our new directory:
+#+begin_src tmux :session s1
+terragrunt init
+#+end_src
+- Lets double check we are in the right region
+#+begin_src tmux :session s1 
+ aws configure get region
+#+end_src
+- Yup it returns:
+#+begin_example
+ap-southeast-2
+#+end_example
+- And lets deploy:
+#+begin_src tmux :session s1
+terragrunt apply
+#+end_src
+- We suddenly have order of operation issue:
+#+begin_example
+   on .terraform/modules/deploy_nixos/deploy_nixos/main.tf line 129, in locals:
+│  129:   ssh_private_key      = local.ssh_private_key_file == "-" ? var.ssh_private_key : file(local.ssh_private_key_file)
+#+end_example
+- To get around this I am going to touch and chmod the file to exist. 
+- TODO: figure out why this is required for this apply 
+#+begin_src tmux :session s1
+touch ./id_rsa.pem
+chmod 600 ./id_rsa.pem
+#+end_src
+- Lets try again:
+#+begin_src tmux :session s1
+terragrunt apply
+#+end_src
+- Oops without the 22 whitelisting the deploy_nixos can not get on the machine to deploy
+#+begin_example
+module.deploy_nixos.null_resource.deploy_nixos: Still creating... [1m30s elapsed]
+╷
+│ Error: file provisioner error
+│
+│   with module.deploy_nixos.null_resource.deploy_nixos,
+│   on .terraform/modules/deploy_nixos/deploy_nixos/main.tf line 165, in resource "null_resource" "deploy_nixos":
+│  165:   provisioner "file" {
+#+end_example
+- For now I am going to add whitelisting for my ip back in
+- Ok it is up, unexpectedly it still started the service, I do have enabled set to true, but thought that setting did not allow autostart
+- TODO: Trace service startup so you can see what it is doing.
+- Ok I stopped the service, lets go look at our LLM steps and see if we can tease out configuration files we need and process for setting up.
+- I know me and Jack did this a while back, I can go look at that as backup, but trying to stay in current repo if I can help
+- mmm llm is a bit of a lyer might be more trouble than it is worth
+- Looking at developers.cardano.org I see there is 4 files involved in BP:
+#+begin_example
+- Main Config: It contains general node settings such as logging and versioning. It also points to the Byron Genesis and the Shelly Genesis file.
+- Byron Genesis: It contains the initial protocol parameters and instructs the cardano-node on how to bootstrap the Byron Era of the Cardano blockchain.
+- Shelly Genesis: It contains the initial protocol parameters and instructs the cardano-node on how to bootstrap the Shelly Era of the Cardano blockchain.
+- optional    Alonzo Genesis: It contains the initial protocol parameters and instructs the cardano-node on how to bootstrap the Alonzo Era of the Cardano blockchain.
+- optional   Conway Genesis: It contains the initial protocol parameters and instructs the cardano-node on how to bootstrap the Conway Era of the Cardano blockchain.
+- Topology: It contains the list of network peers (IP Address and Port of other nodes running the blockchain network) that your node will connect to.
+#+end_example
+- In the repo I see:
+#+begin_src tmux :session s1
+ls -al configuration/cardano
+#+end_src
+- Returns:
+#+begin_example
+total 1184
+drwxr-xr-x 3 root root    4096 May 18 15:36 .
+drwxr-xr-x 6 root root    4096 May 18 14:29 ..
+drwxr-xr-x 2 root root    4096 May 18 14:29 alonzo
+-rw-r--r-- 1 root root    9459 May 18 14:29 mainnet-alonzo-genesis.json
+-rw-r--r-- 1 root root 1056360 May 18 14:29 mainnet-byron-genesis.json
+-rw-r--r-- 1 root root    2885 May 18 14:29 mainnet-config.json
+-rw-r--r-- 1 root root    1657 May 18 14:29 mainnet-config-new-tracing.yaml
+-rw-r--r-- 1 root root    8263 May 18 14:29 mainnet-config.yaml
+-rw-r--r-- 1 root root      22 May 18 14:29 mainnet-conway-genesis.json
+-rw-r--r-- 1 root root     284 May 18 14:29 mainnet-p2p-toplogy.json
+-rw-r--r-- 1 root root    2486 May 18 14:29 mainnet-shelley-genesis.json
+-rw-r--r-- 1 root root     128 May 18 14:29 mainnet-topology.json
+#+end_example
+- Hopefully that means I want to update config.json and p2p-topology.json 
+- Looking at the readme in configuration I see files should be referenced on https://book.world.dev.cardano.org/environments.html
+- MMM, Next I need to now look at changes that I need vs content of these files
+- This is documentation I could find on these based on cardano-foundation stake-pool-course me and Jack did in 2021
+- Two thumbs up for waybackMachine for giving me access to https://cardano-foundation.gitbook.io/stake-pool-course/stake-pool-guide/getting-started/
+- Config files explained:
+- Topology.json
+- Tells your node to which nodes in the network it should talk to. A minimal version of this file looks like this:
+#+begin_example
+{
+  "Producers": [
+    {
+      "addr": "x.x.x.x",
+      "port": 3001,
+      "valency": 1
+    }
+  ]
+}
+#+end_example
+- *.configuration.json
+#+begin_example
+# This was from the tutorial, not this requires magic because it refers to testnet
+{
+  "Protocol": "Cardano",
+  "GenesisFile": "testnet-shelley-genesis.json",
+  "RequiresNetworkMagic": "RequiresMagic",
+# This is the same section in 2023/5 mainnet-configuration.json 
+  "Protocol": "Cardano",
+  "RequiresNetworkMagic": "RequiresNoMagic",
+  "ShelleyGenesisFile": "mainnet-shelley-genesis.json"
+#+end_example
+- it also update parameteres
+This protocol version number gets used by block producing nodes as part of the system for agreeing on and synchronising protocol updates.You just need to be aware of the latest version supported by the network. You dont need to change anything here.
+- it configures Tracing
+Tracers tell your node what information you are interested in when logging, such as switches that you can turn ON or OFF according the type and quantity of information that you are interesetd in. This provides fairly coarse grained control, but it is relatively efficient at filtering out unwanted trace output.
+- it allows fine grained logging control, I see the current file uses this setting for EKG metrics.
+It is also possible to have more fine-grained control over the filtering of trace output, and to match and route trace output to particular backends. This is less efficient than the coarse trace filters above but provides much more precise control. options:
+mapBackends This routes metrics matching specific names to particular backends. This overrides the defaultBackends listed above. Note that it is an override and not an extension so anything matched here will not go to the default backend, only to the explicitly listed backends.
+mapSubtrace This section is more expressive, we are working on its documentation.
+
+- On my block producers I will nered to update mainnet-topology.json to:
+#+begin_example
+nano testnet-topology.json
+​
+  {
+    "Producers": [
+      {
+        "addr": "<YOUR RELAY NODE TAILSCALE IP ADDRESS>",
+        "port": <PORT>,
+        "valency": 1
+      }
+    ]
+  }
+#+end_example
+
+- On my relay nodes I will need to make the following updates:
+#+begin_example
+{
+  "Producers": [
+    {
+      "addr": "<YOUR BLOCK-PRODUCING NODE IP ADDRESS>",
+      "port": <PORT>,
+      "valency": 1
+    },
+    {
+      "addr": "<OTHER RELAY NODE IP ADDRESS>",
+      "port": <PORT>,
+      "valency": 1
+    },
+    {
+      "addr": "<OTHER RELAY NODE IP ADDRESS>",
+      "port": <PORT>,
+      "valency": 1
+    }
+  ]
+
+#+end_example
+- I know how to pass in the flags I need!
+#+begin_src tmux :session s1
+nix run --accept-flake-config github:input-output-hk/cardano-node?ref=master run -- --help
+#+end_src
+- Returns:
+#+begin_example
+Usage: cardano-node run [--topology FILEPATH]
+                          [--database-path FILEPATH]
+                          [--socket-path FILEPATH]
+                          [ --tracer-socket-path-accept FILEPATH
+                          | --tracer-socket-path-connect FILEPATH
+                          ]
+                          [--byron-delegation-certificate FILEPATH]
+                          [--byron-signing-key FILEPATH]
+                          [--shelley-kes-key FILEPATH]
+                          [--shelley-vrf-key FILEPATH]
+                          [--shelley-operational-certificate FILEPATH]
+                          [--bulk-credentials-file FILEPATH]
+                          [--host-addr IPV4]
+                          [--host-ipv6-addr IPV6]
+                          [--port PORT]
+                          [--config NODE-CONFIGURATION]
+                          [--snapshot-interval SNAPSHOTINTERVAL]
+                          [--validate-db]
+                          [ --mempool-capacity-override BYTES
+                          | --no-mempool-capacity-override
+                          ]
+....
+with lots more available options...
+
+#+end_example
+- The following will run our node with /tmp/cardano-node.socket:
+#+begin_src tmux :session s1
+nix run --accept-flake-config github:input-output-hk/cardano-node?ref=master run -- --socket-path /tmp/cardano-node.socket
+#+end_src
+- Confirmation:
+#+begin_example
+lsof /tmp/cardano-node.socket
+COMMAND    PID USER   FD   TYPE             DEVICE SIZE/OFF  NODE NAME
+cardano-n 7031 root   29u  unix 0xffff8f40099bee80      0t0 38007 /tmp/cardano-node.socket type=STREAM (LISTEN)
+#+end_example
+- Can I have woot woot? Now on a relay we simple update topology.json start the node with our flags, get kes keys, update producer and we should be very close.
+- Lets see if we can query our node from /cardano-node/ run:
+#+begin_src tmux :session s1
+nix run .#cardano-cli -- version
+#+end_src
+- Lets query our node
+- First we set our node.socket env var with:
+#+begin_src tmux :session s1
+export CARDANO_NODE_SOCKET_PATH=/tmp/cardano-node.socket
+#+end_src
+- Next lets see if we can find our current tip:
+#+begin_src tmux :session s1
+ nix run .#cardano-cli -- query tip --mainnet
+#+end_src
+- YAS!
+#+begin_example
+{
+    "block": 4267441,
+    "epoch": 197,
+    "era": "Byron",
+    "hash": "568fb79a14b8e10b9811a7c8252a94c8ab7afa7a4f71c343adc6748ccb20b4b1",
+    "slot": 4269593,
+    "slotInEpoch": 14393,
+    "slotsToEpochEnd": 7207,
+    "syncProgress": "47.88"
+}
+#+end_example
+
+*** outstanding steps from buildCardanoStakePoolUbuntu.org
+- URL: https://github.com/yumiai/docs/blob/main/bernoHome/buildCardanoStakePoolUbuntu.org#create-core-node-and-use-the-above-relay-nodes
+- Update the relay topology.json for both relay and block-producter to add our tailscale network names for 2xrelay and 1xblock producer
+- Generate some keys
+   #+begin_src tmux :session tmux-old-host
+cardano-cli node key-gen \
+--cold-verification-key-file cold.vkey \
+--cold-signing-key-file cold.skey \
+--operational-certificate-issue-counter-file cold.counter
+   #+end_src
+**** Generate stake keys and address
+Stake key pair
+   #+begin_src tmux :session s1
+ cardano-cli stake-address key-gen \
+ --verification-key-file stake.vkey \
+ --signing-key-file stake.skey
+   #+end_src
+**** Registser address in the blockchain
+   #+begin_src tmux :session s1
+    cardano-cli stake-address build \
+ --stake-verification-key-file stake.vkey \
+ --out-file stake.addr \
+ --testnet-magic 1097911063
+   #+end_src
+**** Regenrate payment address
+   #+begin_src tmux :session s1
+ cardano-cli address build \
+ --payment-verification-key-file payment.vkey \
+ --stake-verification-key-file stake.vkey \
+ --out-file paymentwithstake.addr \
+ --testnet-magic 1097911063
+   #+end_src
+**** Register stake address in the blockchain
+***** Generate registration certificate
+   #+begin_src tmux :session s1
+cardano-cli stake-address registration-certificate \
+--stake-verification-key-file stake.vkey \
+--out-file stake.cert
+   #+end_src
+**** Start my relay-node
+   #+begin_src tmux :session tmux-old-host
+cardano-node run \
+--topology testnet-topology.json \
+--database-path db \
+--socket-path db/node.socket \
+--host-addr 0.0.0.0 \
+--port 3001 \
+--config testnet-config.json
+   #+end_src
+- TODO: Need the flags to start our block producer, should be similar just including keys.
+   
+  
+* Next steps. 
+** Current
+  - The terragrunt research culmintated in restructure that allows us to spin up 3 relay-nodes each checking in a different region, each configured with tailscale
+  - We are now in the process of re-applying what we overlap on a block-producer
+  - Researh shows we have the files we need to apply this change to in input-output-hk/cardano-node/configuration/cardano
+  - I figured out how to pass in the flags we need. -- duh, now I can create and set the node-socket and even qury our node
+  - Next step is to update topology for both relay and producer and generate some keys implement rest of the "outstanding steps from buildCardanoStakePoolUbuntu.org"
+
+** Archive of old steps, this is all done
+  - Add final parts to make prod ready and move on to block-producer
+  - The node gets started as a service we define in configuration.nix "systemctl status cardano-node-relay-daemon.service"
+  - The new machine registers itself in tailscale, you can use tailscales to authenticate ssh over the 10. network, you can find machine by ip or networking.hostName
+  - I can see healty logs with work the node is doing, I can see a dashboard with healty metrics, I still need to query and cli interact with the server
+  - Document and test what we have, I see 
+
+  
+
+- Things to keep in mind:
+#+begin_example
+- Still need to figure out how we set configurations for the node ie whitelist block producer etc
+- iptables
+- networks in aws, do we allow any internal communication through aws or will everything flow through tailscale?
+- still need to think about key management, aegis/sops
+#+end_example
+
  
 
 *** Troubleshooting tips
@@ -439,30 +846,6 @@ aws configure get region
 #+end_example
 
 
-
-* Next steps. 
-** Current
-  - Document and test
-  - What else is needed? wiregaurd, key management, inventory management, NAT-Gateway, elb(?)
-  - Add final parts to make prod ready and move on to block-producer
-** Archive of old steps, this is all done
-
-#current
-- We can now deploy a cardano-relay in AWS using, terraform init, terraform user_data (start_node.sh) and configuration.nix
-- The node gets started as a service we define in configuration.nix "systemctl status cardano-node-relay-daemon.service"
-- The machine is also autoconnected to the yumi tailscale network.
-- Next step is to document and test what we have.
-- Once testing is done we will pivot to terraform/aws structure and account management strategy formalization
-
-  
-
-- Things to keep in mind:
-#+begin_example
-- Still need to figure out how we set configurations for the node ie whitelist block producer etc
-- iptables
-- networks in aws, do we allow any internal communication through aws or will everything flow through tailscale?
-- still need to think about key management, aegis/sops
-#+end_example
 
 * Additional information
 - We can start with a copy of https://github.com/bernokl/nix-ops take learnings from https://github.com/yumiai/docs/blob/main/bernoHome/diypool_apply.org and deploy what we can from: input-output-hk/cardano-node
