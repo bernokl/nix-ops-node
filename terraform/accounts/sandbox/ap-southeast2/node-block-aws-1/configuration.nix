@@ -22,7 +22,7 @@ in {
     wantedBy = ["multi-user.target"];
 
     serviceConfig = {
-      ExecStart = "${pkgs.nix}/bin/nix run --accept-flake-config github:input-output-hk/cardano-node?ref=master run";
+      ExecStart = "${pkgs.nix}/bin/nix run --accept-flake-config github:input-output-hk/cardano-node?ref=master run -- --topology /cardano-node/configuration/cardano/testnet-topology.json --socket-path /tmp/cardano-node.socket --config /cardano-node/configuration/cardano/testnet-config.json";
       Restart = "always";
       User = "root";
       WorkingDirectory="/cardano-node/";
@@ -56,7 +56,7 @@ in {
 
       # authenticate with tailscale
       # Note they key you use is critical for re-use, auth, auto-register and tages
-      ${tailscale}/bin/tailscale up --ssh -authkey tskey-auth-xxxxx
+      ${tailscale}/bin/tailscale up --ssh -authkey tskey-auth-xxxx
     '';
 };
 
@@ -68,7 +68,7 @@ in {
   };
 
   # Note this will be your magic-dns name for the machine in tailscale
-  networking.hostName = "aws-ap-se-2-1";
+  networking.hostName = "aws-ap-se-2-bp-1";
   networking.domain = "husky-ostrich.ts.net";
 
   environment.systemPackages = with pkgs; [
