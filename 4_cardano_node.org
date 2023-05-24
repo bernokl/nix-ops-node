@@ -754,6 +754,72 @@ export CARDANO_NODE_SOCKET_PATH=/tmp/cardano-node.socket
     "syncProgress": "47.88"
 }
 #+end_example
+- Machine torn down, updates made to the flags of our service:
+#+begin_example
+"${pkgs.nix}/bin/nix run --accept-flake-config github:input-output-hk/cardano-node?ref=master run -- --topology /cardano-node//configuration/cardano/testnet-topology.json --socket-path /tmp/cardano-node.socket --config /cardano-node//configuration/cardano/testnet-config.json
+#+end_example
+- Lets re-provision and confirm our node starts up
+- Grab the ip:
+#+begin_src tmux :session s1
+aws ec2 describe-instances --filters 'Name=instance-state-name,Values=running' --query 'Reservations[*].Instances[*].[InstanceId,PublicIpAddress]' --output text
+#+end_src
+- Returns:
+#+begin_example
+i-07518b843710xxxxxxxxxxxxxxx     13.xx.xx.77
+#+end_example
+- Lets ssh:
+#+begin_src tmux :session s1
+  ssh -i id_rsa.pem root@13.xx.xx.77
+#+end_src
+- Next step is to update topology for both relay and producer and generate some keys implement rest of the "outstanding steps from buildCardanoStakePoolUbuntu.org"
+- I spent an hour troubhelshooting why terragrunt now fails if we do not pre-create the id_rsa.pem. I understand why it fails, but not how to fix it.
+- Adding manual for now.
+#+begin_src tmux :session s1
+touch id_rsa.pem
+chmod 600 id_rsa.pem
+#+end_src
+- OK, I pull in current configs update the config file-names to match our flake and that allows the tesnet relay to come up automatically
+- Section I added to start_node.sh
+#+begin_example
+/run/current-system/sw/bin/curl -o /cardano-node/configuration/cardano/testnet-topology.json https://book.world.dev.cardano.org/environments/preprod/topology.json &
+/run/current-system/sw/bin/curl -o /cardano-node/configuration/cardano/testnet-byron-genesis.json https://book.world.dev.cardano.org/environments/preprod/byron-genesis.json &
+/run/current-system/sw/bin/curl -o /cardano-node/configuration/cardano/testnet-shelley-genesis.json https://book.world.dev.cardano.org/environments/preprod/shelley-genesis.json &
+/run/current-system/sw/bin/curl -o /cardano-node/configuration/cardano/testnet-alonzo-genesis.json https://book.world.dev.cardano.org/environments/preprod/alonzo-genesis.json &
+/run/current-system/sw/bin/curl -o /cardano-node/configuration/cardano/testnet-conway-genesis.json https://book.world.dev.cardano.org/environments/preprod/conway-genesis.json  &
+/run/current-system/sw/bin/curl -o /cardano-node/configuration/cardano/testnet-config.json https://book.world.dev.cardano.org/environments/preprod/config.json &
+# Fix paths set in official config.json
+sed -i 's/conway-genesis.json/testnet-conway-genesis.json/g' /cardano-node/configuration/cardano/testnet-config.json
+sed -i 's/alonzo-genesis.json/testnet-alonzo-genesis.json/g' /cardano-node/configuration/cardano/testnet-config.json
+sed -i 's/byron-genesis.json/testnet-byron-genesis.json/g' /cardano-node/configuration/cardano/testnet-config.json
+sed -i 's/shelley-genesis.json/testnet-shelley-genesis.json/g' /cardano-node/configuration/cardano/testnet-config.json
+#+end_example
+- Confirmed it is working in ap-southeast2 lets do the same in eu-north1
+- The node isup, the topology file confirmed pointing to preprod, lets connect
+#+begin_src tmux session s1
+export CARDANO_NODE_SOCKET_PATH=/tmp/cardano-node.socket
+nix run .#cardano-cli -- query tip --testnet-magic 1
+#+end_src
+- Returns:
+#+begin_example
+{
+    "block": 223797,
+    "epoch": 30,
+    "era": "Babbage",
+    "hash": "7510ea7eba8e63764dd5c14689a47fa15cea0875adf0fd311ed394c5f7746e91",
+    "slot": 11618608,
+    "slotInEpoch": 300208,
+    "slotsToEpochEnd": 131792,
+    "syncProgress": "43.01"
+}
+
+[root@aws-eu-n-1-nr-1:/cardano-node]
+#+end_example
+- Nice, lets go tear down ap-southeast2, build that from repo, if good push and commit changes
+- Did the same for the block producer all 4 instances in the sanbox account now connects to testnet.
+- Now we will go look at our tutorial and create the keys, register our address
+
+
+
 
 *** outstanding steps from buildCardanoStakePoolUbuntu.org
 - URL: https://github.com/yumiai/docs/blob/main/bernoHome/buildCardanoStakePoolUbuntu.org#create-core-node-and-use-the-above-relay-nodes
@@ -813,6 +879,7 @@ cardano-node run \
   - We are now in the process of re-applying what we overlap on a block-producer
   - Researh shows we have the files we need to apply this change to in input-output-hk/cardano-node/configuration/cardano
   - I figured out how to pass in the flags we need. -- duh, now I can create and set the node-socket and even qury our node
+  - Set up configs to auto provision 3 relays and a bp node to use testnet in sandbox
   - Next step is to update topology for both relay and producer and generate some keys implement rest of the "outstanding steps from buildCardanoStakePoolUbuntu.org"
 
 ** Archive of old steps, this is all done
