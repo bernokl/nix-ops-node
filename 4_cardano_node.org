@@ -875,6 +875,13 @@ nix run .#cardano-cli -- node key-gen \
     --cold-signing-key-file $HOME/cardano-testnet/keys/cold.skey \
     --operational-certificate-issue-counter $HOME/cardano-testnet/keys/cold.counter
 #+end_src
+- Generate KES keys
+#+begin_src tmux :session s1
+cd /cardano-node/
+nix run .#cardano-cli -- node key-gen-KES \
+    --verification-key-file $HOME/cardano-testnet/keys/kes.vkey \
+    --signing-key-file $HOME/cardano-testnet/keys/kes.skey
+#+end_src
 - Make a VRF key pair.
 #+begin_src tmux :session s1
 nix run .#cardano-cli -- node key-gen-VRF \
@@ -888,6 +895,337 @@ chmod 400 $HOME/cardano-testnet/keys/vrf.skey
 
 #Current:
 - Continue tutorial here https://developers.cardano.org/docs/operate-a-stake-pool/block-producer-keys#stakepool-operational-certificate-generation
+
+- Get slotNo
+#+begin_src tmux :session s1
+slotsPerKESPeriod=$(cat /cardano-node/configuration/cardano/testnet-shelley-genesis.json | jq -r '.slotsPerKESPeriod')
+echo slotsPerKESPeriod: ${slotsPerKESPeriod}
+
+slotNo=$(nix run .#cardano-cli -- query tip --testnet-magic 1 | jq -r '.slot')
+echo slotNo: ${slotNo}
+#+end_src
+- Boo:
+#+begin_example
+jq: command not found
+#+end_example
+- For now we will install in our session, for future we will add the package to our configuration.nix
+#+begin_src tmux :session s1
+nix-env -i jq
+#+end_src
+- Lets try getting the slotNo again
+- Yas, this time we get:
+#+begin_example
+ echo slotNo: ${slotNo}
+slotNo: 29254618
+#+end_example
+- Find kesPeriod by dividing the slot tip number by slotsPerKESPeriod.
+#+begin_src tmux :session s1
+kesPeriod=$((${slotNo} / ${slotsPerKESPeriod}))
+echo kesPeriod: ${kesPeriod}
+startKesPeriod=${kesPeriod}
+echo startKesPeriod: ${startKesPeriod}
+#+end_src
+- Returns:
+#+begin_example
+echo kesPeriod: ${kesPeriod}
+kesPeriod: 225
+
+echo startKesPeriod: ${startKesPeriod}
+startKesPeriod: 225
+#+end_example
+- With this calculation, we can generate an operational certificate for the pool. Change the {startKesPeriod} in script from the value above accordingly.
+#+begin_src tmux :session s1
+cd /cardano-node/
+nix run .#cardano-cli -- node issue-op-cert \
+      --kes-verification-key-file $HOME/cardano-testnet/keys/kes.vkey \
+      --cold-signing-key-file $HOME/cardano-testnet/keys/cold.skey \
+      --operational-certificate-issue-counter $HOME/cardano-testnet/keys/cold.counter \
+      --kes-period ${startKesPeriod} \
+      --out-file $HOME/cardano-testnet/keys/node.cert
+#+end_src
+- Lets set the env vars, see if we can run our node with keys:
+#+begin_src tmux :session s1
+KES=$HOME/cardano-testnet/keys/kes.skey
+VRF=$HOME/cardano-testnet/keys/vrf.skey
+CERT=$HOME/cardano-testnet/keys/node.cert
+#+end_src
+- First lets stop the service that is currently running our node
+#+begin_src tmux :session s1
+systemctl stop cardano-node-block-producer-daemon.service 
+#+end_src
+- Let us manually try to run our node with the new values:
+#+begin_src tmux :session s1
+nix run --accept-flake-config github:input-output-hk/cardano-node?ref=master run -- --topology /cardano-node/configuration/cardano/testnet-topology.json --socket-path /tmp/cardano-node.socket --port 6001 --config /cardano-node/configuration/cardano/testnet-config.json --shelley-kes-key ${KES} --shelley-vrf-key ${VRF} --shelley-operational-certificate ${CERT}
+#+end_src
+- It is coming up, it is looking healty, I can port-forward and see ekg stats. 
+- Struggling to confirm it is running as Core node, but I do See "TraceNodeNotLeader" so that seems good enough for now
+- Next I will go register our stakepool https://developers.cardano.org/docs/operate-a-stake-pool/register-stake-address
+- Register Stake Address:
+- Query the UTXO of the address that pays for the transaction and deposit:
+#+begin_src tmux :session s1
+cd /cardano-node/ 
+nix run .#cardano-cli -- query utxo \
+    --address $(cat $HOME/cardano-testnet/keys/payment.addr) \
+    --testnet-magic 1 > $HOME/cardano-testnet/keys/fullUtxo.out
+#+end_src
+- Confirm
+#+begin_src tmux :session s1
+cat $HOME/cardano-testnet/keys/fullUtxo.out
+#+end_src
+- I see the txHash and details
+- Find out current slot:
+#+begin_src tmux :session s1
+cd /cardano-node/ 
+currentSlot=$(nix run .#cardano-cli -- query tip --testnet-magic 1 | jq -r '.slot')
+echo Current Slot: $currentSlot
+#+end_src
+- Create a stake address registration certificate
+#+begin_src tmux :session s1
+cd /cardano-node/ 
+nix run .#cardano-cli -- stake-address registration-certificate \
+    --stake-verification-key-file $HOME/cardano-testnet/keys/stake.vkey \
+    --out-file $HOME/cardano-testnet/keys/stake.cert
+#+end_src
+- Now, we build the transaction which will return the tx.raw transaction file and also the transaction fees:
+#+begin_src tmux :session s1
+cd /cardano-node
+nix run .#cardano-cli -- transaction build \
+      --tx-in 2c62f98035ee9c1a6da177d5aa5f69b82acb7134cae940dd35188a353f411ff8#0 \
+      --tx-out $(cat $HOME/cardano-testnet/keys/payment.addr)+1000000 \
+      --change-address $(cat $HOME/cardano-testnet/keys/payment.addr) \
+      --testnet-magic 1 \
+      --certificate-file $HOME/cardano-testnet/keys/stake.cert \
+      --invalid-hereafter $(( ${currentSlot} + 1000)) \
+      --witness-override 2 \
+      --out-file $HOME/cardano-testnet/keys/tx.raw
+#+end_src
+- Output:
+#+begin_example
+Estimated transaction fee: Lovelace 172013
+#+end_example
+- Go find the deposit amount in the protocol parameters
+#+begin_src tmux :session s1
+cd /cardano-node/
+nix run .#cardano-cli -- query protocol-parameters \
+      --testnet-magic 1  \
+      --out-file $HOME/cardano-testnet/keys/protocol.json
+
+stakeAddressDeposit=$(cat $HOME/cardano-testnet/keys/protocol.json | jq -r '.stakeAddressDeposit')
+echo $stakeAddressDeposit
+#+end_src
+- Returns:
+#+begin_example
+2000000
+#+end_example
+- Next, the complete transaction output is calculated by subtracting the deposit and transaction fees from the amount we have in our payment address:
+#+begin_src tmux :session s1
+txOut=$((10000000000-${stakeAddressDeposit}-172013))
+echo ${txOut}
+#+end_src
+- Now we have all the information in place to build the final transaction file:
+#+begin_src tmux :session s1
+cd /cardano-node/
+nix run .#cardano-cli -- transaction build-raw \
+      --tx-in 2c62f98035ee9c1a6da177d5aa5f69b82acb7134cae940dd35188a353f411ff8#0 \
+      --tx-out $(cat $HOME/cardano-testnet/keys/payment.addr)+${txOut} \
+      --invalid-hereafter $((${currentSlot} + 1000)) \
+      --fee 172013 \
+      --certificate-file $HOME/cardano-testnet/keys/stake.cert \
+      --out-file $HOME/cardano-testnet/keys/tx.raw
+#+end_src
+- Sign the transaction with both the payment and stake secret keys:
+#+begin_src tmux :session s1
+cd /cardano-node/
+nix run .#cardano-cli -- transaction sign \
+      --tx-body-file $HOME/cardano-testnet/keys/tx.raw \
+      --signing-key-file $HOME/cardano-testnet/keys/payment.skey \
+      --signing-key-file $HOME/cardano-testnet/keys/stake.skey \
+      --testnet-magic 1 \
+      --out-file $HOME/cardano-testnet/keys/tx.signed
+#+end_src
+- Lets go submit our signed transaction
+#+begin_src tmux :session s1
+nix run .#cardano-cli -- transaction submit \
+    --tx-file $HOME/cardano-testnet/keys/tx.signed \
+    --testnet-magic 1 
+#+end_src
+- Next Register a Stake Pool with Metadata
+- Create a json file with your metadata
+#+begin_example
+{
+    "name": "TestPool",
+    "description": "The pool that tests all the pools",
+    "ticker": "TEST",
+    "homepage": "https://teststakepool.com"
+}
+#+end_example
+- Lets get the hash for our metadata file:
+#+begin_src tmux :session s1
+nix run .#cardano-cli -- stake-pool metadata-hash --pool-metadata-file $HOME/cardano-testnet/poolMetadata.json
+#+end_src
+- Returns:
+#+begin_example
+8292a9e45df8a72f975d6222690ce5bf3fe4a34ac72e272577dad47d075e7582
+#+end_example
+- Lets Generate the stake pool registration certificate
+- NOTE: for the url below I took the permalink for a file I put in github into tinyrl because the permalink is too long for the cert
+#+begin_src tmux :session s1
+nix run .#cardano-cli -- stake-pool registration-certificate \
+    --cold-verification-key-file $HOME/cardano-testnet/keys/cold.vkey \
+    --vrf-verification-key-file $HOME/cardano-testnet/keys/vrf.vkey \
+    --pool-pledge 10000 \
+    --pool-cost 340000000 \
+    --pool-margin 1 \
+    --pool-reward-account-verification-key-file $HOME/cardano-testnet/keys/stake.vkey \
+    --pool-owner-stake-verification-key-file $HOME/cardano-testnet/keys/stake.vkey \
+    --testnet-magic 1 \
+    --pool-relay-ipv4 16.16.199.77 \
+    --pool-relay-port 41783 \
+    --metadata-url https://tinyurl.com/yc5xxnke \
+    --metadata-hash 8292a9e45df8a72f975d6222690ce5bf3fe4a34ac72e272577dad47d075e7582  \
+    --out-file $HOME/cardano-testnet/keys/pool-registration.cert
+#+end_src
+- NEXT: finish up the above and pick up here: https://developers.cardano.org/docs/operate-a-stake-pool/register-stake-pool-metadata#generate-stake-pool-registration-certificate
+- Let me go spin up our eu-north relay node so we can get a public ip for a relay
+- The relay came up quick, I am taking a minute to make sure I understand the node port
+#+begin_example
+sudo netstat -tulpen | grep cardano-node
+tcp        0      0 0.0.0.0:41783           0.0.0.0:*               LISTEN      0          17293      2111/cardano-node   
+tcp        0      0 127.0.0.1:12798         0.0.0.0:*               LISTEN      0          19353      2111/cardano-node   
+tcp        0      0 127.0.0.1:12788         0.0.0.0:*               LISTEN      0          19352      2111/cardano-node   
+tcp6       0      0 :::34509                :::*                    LISTEN      0          17294      2111/cardano-node   
+#+end_example
+Is that what my node is creating calling?
+- Lets confirm and see what is using port 41783
+#+begin_src tmux :session s1
+sudo lsof -i -P -n | grep 41783
+#+end_src
+- Returns:
+#+begin_example
+cardano-n 2111   root   32u  IPv4  17293      0t0  TCP *:41783 (LISTEN)
+#+end_example
+- Lets see what we made:
+#+begin_src tmux :session s1
+cat $HOME/cardano-testnet/keys/pool-registration.cert
+#+end_src
+- EYEEE, it looks like a certificate:
+#+begin_example
+{
+    "type": "CertificateShelley",
+    "description": "Stake Pool Registration Certificate",
+    "cborHex": "8a03581c045132653833613fb65c1bc9669d3fe617ad65361b2bc8490d51beee5820f91aec34939da643299bacaad2bcba7a0a140d6450c593238f8f57cf0d1ff0c71927101961a8d81e820101581de1a3fcba1fc8f9a73c05d114f79c465c2b62571d17d42fafcccc86557881581ca3fcba1fc8f9a73c05d11.....
+}
+#+end_example
+- To honor your pledge, create a delegation certificate:
+#+begin_src tmux :session s1
+cd /cardano-node/
+nix run .#cardano-cli -- stake-address delegation-certificate \
+      --stake-verification-key-file $HOME/cardano-testnet/keys/stake.vkey \
+      --cold-verification-key-file $HOME/cardano-testnet/keys/cold.vkey \
+      --out-file $HOME/cardano-testnet/keys/delegation.cert
+#+end_src
+- Draft the transaction to submit the registration certificate to the blockchain:
+- NOTE: You can find the TxHash#TxIx by running "cardano-cli query utxo --address payment.addr"
+#+begin_src tmux :session s1
+cd /cardano-node/
+  nix run .#cardano-cli -- transaction build-raw \
+      --tx-in 300ab13a2539d437d9144fd35bbfbd3c74cc4825f8773f2da54bbcf81e74a1c4#0 \
+      --tx-out $(cat $HOME/cardano-testnet/keys/payment.addr)+0 \
+      --invalid-hereafter 0 \
+      --fee 0 \
+      --out-file $HOME/cardano-testnet/keys/tx.draft \
+      --certificate-file $HOME/cardano-testnet/keys/pool-registration.cert \
+      --certificate-file $HOME/cardano-testnet/keys/delegation.cert
+#+end_src
+- Calculate the fees:
+#+begin_src tmux :session s1
+cd /cardano-node/
+  nix run .#cardano-cli -- transaction calculate-min-fee \
+      --tx-body-file $HOME/cardano-testnet/keys/tx.draft \
+      --tx-in-count 1 \
+      --tx-out-count 1 \
+      --witness-count 3 \
+      --byron-witness-count 0 \
+      --testnet-magic 1 \
+      --protocol-params-file $HOME/cardano-testnet/keys/protocol.json
+#+end_src
+- Returns:
+#+begin_example
+194761 Lovelace
+#+end_example
+- I look up the pool deposit, I know there is a better way:
+#+begin_example
+ grep PoolDeposit $HOME/cardano-testnet/keys/protocol.json
+    "stakePoolDeposit": 500000000,
+
+#+end_example
+- Lets look up our UTxO Balance
+#+begin_src tmux :session s1
+nix run .#cardano-cli --  query utxo --address addr_test1vr5m5e9ws0mfwrc8hupp0ty9srzjfvjwagxqk6qa7vdfa7cvkkp98 --testnet-magic 1
+#+end_src
+Returns the hash we used in our build-raw above
+#+begin_example
+                           TxHash                                 TxIx        Amount
+--------------------------------------------------------------------------------------
+300ab13a2539d437d9144fd35bbfbd3c74cc4825f8773f2da54bbcf81e74a1c4     0        9997827987 lovelace + TxOutDatumNone
+#+end_example
+
+- Calculate the change for tx-out:
+#+begin_example
+expr <UTxO BALANCE> - <poolDeposit> - <TRANSACTION FEE>
+#+end_example
+- So in our case
+#+begin_src tmux :session s1
+expr 9997827987 - 500000000 - 194761
+#+end_src
+- Gives me:
+#+begin_example
+9497633226
+#+end_example
+- Build the transaction
+#+begin_src tmux :session s1
+cd /cardano-node/
+  nix run .#cardano-cli -- transaction build-raw \
+      --tx-in 300ab13a2539d437d9144fd35bbfbd3c74cc4825f8773f2da54bbcf81e74a1c4#0 \
+      --tx-out $(cat $HOME/cardano-testnet/keys/payment.addr)+9497633226 \
+      --invalid-hereafter $(( ${currentSlot} + 1000))  \
+      --fee 194761 \
+      --out-file $HOME/cardano-testnet/keys/tx.raw \
+      --certificate-file $HOME/cardano-testnet/keys/pool-registration.cert \
+      --certificate-file $HOME/cardano-testnet/keys/delegation.cert
+#+end_src
+- Sign the transaction:
+#+begin_src tmux :session s1
+cd /cardano-node/
+  nix run .#cardano-cli -- transaction sign \
+      --tx-body-file $HOME/cardano-testnet/keys/tx.raw \
+      --signing-key-file $HOME/cardano-testnet/keys/payment.skey \
+      --signing-key-file $HOME/cardano-testnet/keys/stake.skey \
+      --signing-key-file $HOME/cardano-testnet/keys/cold.skey \
+      --testnet-magic 1 \
+      --out-file $HOME/cardano-testnet/keys/tx.signed
+#+end_src
+- Submit the transaction:
+#+begin_src tmux :session s1
+cd /cardano-node/
+  nix run .#cardano-cli -- transaction submit \
+      --tx-file $HOME/cardano-testnet/keys/tx.signed \
+      --testnet-magic 1
+#+end_src
+- Lets see if we can find our pool, first get the poolid
+#+begin_src tmux :session s1
+cd /cardano-node
+  nix run .#cardano-cli --  stake-pool id --cold-verification-key-file $HOME/cardano-testnet/keys/cold.vkey --output-format "hex"
+#+end_src
+- And lets look for the pool on the network ledger
+#+begin_src tmux :session s1
+cd /cardano-node/
+  nix run .#cardano-cli -- query ledger-state --testnet-magic 1 | grep publicKey | grep 045132653833613fb65c1bc9669d3fe617ad65361b2bc8490d51beee
+#+end_src
+- SOOO COOL. I would like to use pool-tool or other to get more details, but I see the id in the ledger, need to find more metadata.
+
+
+
 
 
 *** outstanding steps from buildCardanoStakePoolUbuntu.org
