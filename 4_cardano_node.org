@@ -1289,6 +1289,8 @@ cardano-node run \
   - Set up configs to auto provision 3 relays and a bp node to use testnet in sandbox
   - Next step is to update topology for both relay and producer and generate some keys implement rest of the "outstanding steps from buildCardanoStakePoolUbuntu.org"
   - Continue block producer tutorial here: https://developers.cardano.org/docs/operate-a-stake-pool/block-producer-keys#stakepool-operational-certificate-generation
+  - Worked through that link and now I have a block producer with a registered stake pool.
+  - I still need some validation on what I did, but sandbox has a working testnet bp, rn and stake-pool
 
 ** Archive of old steps, this is all done
   - Add final parts to make prod ready and move on to block-producer
