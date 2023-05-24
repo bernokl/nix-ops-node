@@ -817,8 +817,77 @@ nix run .#cardano-cli -- query tip --testnet-magic 1
 - Nice, lets go tear down ap-southeast2, build that from repo, if good push and commit changes
 - Did the same for the block producer all 4 instances in the sanbox account now connects to testnet.
 - Now we will go look at our tutorial and create the keys, register our address
+- Looks like the guide we will try to follow to finish up our stakepool in testnet:
+- https://developers.cardano.org/docs/operate-a-stake-pool/
+- Picking up here: https://developers.cardano.org/docs/operate-a-stake-pool/generating-wallet-keys
+- Going to do this on my bp-node from my node-block directory
+#+begin_src tmux :session s1
+ssh -i id_rsa.pem root@xx.xx.xx.xx
+#+end_src
+- Lets create directory to store everythhing in:
+#+begin_src tmux :session s1
+mkdir -p $HOME/cardano-testnet/keys
+cd $HOME/cardano-testnet/keys
+#+end_src
+- Lets generate the payment pair:
+#+begin_src tmux :session s1
+cd /cardano-node/
+  nix run .#cardano-cli -- address key-gen \
+      --verification-key-file $HOME/cardano-testnet/keys/payment.vkey \
+      --signing-key-file $HOME/cardano-testnet/keys/payment.skey
+#+end_src
+- Create new stakepool address pair:
+#+begin_src tmux :session s1
+   nix run .#cardano-cli -- stake-address key-gen \
+    --verification-key-file $HOME/cardano-testnet/keys/stake.vkey \
+    --signing-key-file $HOME/cardano-testnet/keys/stake.skey
+#+end_src
+- Generate a wallet address for the payment key payment.vkey which will delegate to the stake address stake.vkey:
+#+begin_src tmux :session s1
+  nix run .#cardano-cli --  address build \
+    --payment-verification-key-file $HOME/cardano-testnet/keys/payment.vkey \
+    --out-file $HOME/cardano-testnet/keys/payment.addr \
+    --testnet-magic 1
+#+end_src
+- With the output of the payment.addr I can see the address on chain and that it has no money in it.
+#+begin_example
+nix run .#cardano-cli -- query utxo --address $(cat payment.addr)  --testnet-magic 1
+warning: Git tree '/cardano-node' is dirty
+                           TxHash                                 TxIx        Amount
+--------------------------------------------------------------------------------------
+#+end_example
+- Next go register on faucet so we can get some ada to test with: https://docs.cardano.org/cardano-testnet/tools/faucet/
+- I did initially request the funds for preview instead of preprod, it did not give error, but I did not get funds
+- After I sennt the funds to the right network lets see:
+#+begin_example
+nix run .#cardano-cli --  query utxo --address addr_test1vqvpj9hm86lnp7n3p5qjkm7df38av6k302rcx788f287uaqdrernh --testnet-magic 1
+#+end_example
+- YAS, we have funds:
+#+begin_example
+                           TxHash                                 TxIx        Amount
+--------------------------------------------------------------------------------------
+86f4a5ffc63d317a7eaf28ca86819511ea3eeb90d7696faae6efd177c6cfe687     0        10000000000 lovelace + TxOutDatumNone
+#+end_example
+- Create some cold keys and counter
+#+begin_src tmux :session s1
+nix run .#cardano-cli -- node key-gen \
+    --cold-verification-key-file $HOME/cardano-testnet/keys/cold.vkey \
+    --cold-signing-key-file $HOME/cardano-testnet/keys/cold.skey \
+    --operational-certificate-issue-counter $HOME/cardano-testnet/keys/cold.counter
+#+end_src
+- Make a VRF key pair.
+#+begin_src tmux :session s1
+nix run .#cardano-cli -- node key-gen-VRF \
+    --verification-key-file $HOME/cardano-testnet/keys/vrf.vkey \
+    --signing-key-file $HOME/cardano-testnet/keys/vrf.skey
+#+end_src
+- Update permissions on skey to set it to readonly
+#+begin_src tmux :session s1
+chmod 400 $HOME/cardano-testnet/keys/vrf.skey
+#+end_src
 
-
+#Current:
+- Continue tutorial here https://developers.cardano.org/docs/operate-a-stake-pool/block-producer-keys#stakepool-operational-certificate-generation
 
 
 *** outstanding steps from buildCardanoStakePoolUbuntu.org
@@ -881,6 +950,7 @@ cardano-node run \
   - I figured out how to pass in the flags we need. -- duh, now I can create and set the node-socket and even qury our node
   - Set up configs to auto provision 3 relays and a bp node to use testnet in sandbox
   - Next step is to update topology for both relay and producer and generate some keys implement rest of the "outstanding steps from buildCardanoStakePoolUbuntu.org"
+  - Continue block producer tutorial here: https://developers.cardano.org/docs/operate-a-stake-pool/block-producer-keys#stakepool-operational-certificate-generation
 
 ** Archive of old steps, this is all done
   - Add final parts to make prod ready and move on to block-producer
