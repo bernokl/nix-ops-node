@@ -22,9 +22,12 @@ in {
     wantedBy = ["multi-user.target"];
 
     serviceConfig = {
-      ExecStart = "${pkgs.nix}/bin/nix run --accept-flake-config github:input-output-hk/cardano-node?ref=master run -- --topology /cardano-node/configuration/cardano/testnet-topology.json --socket-path /tmp/cardano-node.socket --config /cardano-node/configuration/cardano/testnet-config.json";
+#      ExecStart = "${pkgs.nix}/bin/nix run --accept-flake-config github:input-output-hk/cardano-node?ref=master run -- --topology /cardano-node/configuration/cardano/testnet-topology.json --socket-path /tmp/cardano-node.socket --port 6001 --config /cardano-node/configuration/cardano/testnet-config.json --shelley-kes-key ${KES} --shelley-vrf-key ${VRF} --shelley-operational-certificate ${CERT}";
+      ExecStart = "${pkgs.bash}/bin/bash -c /run/run_bp";
+      Type = "forking";
+      User = "root"; 
+      Group = "root"; 
       Restart = "always";
-      User = "root";
       WorkingDirectory="/cardano-node/";
       RestartSec = 1;
     };
@@ -56,7 +59,7 @@ in {
 
       # authenticate with tailscale
       # Note they key you use is critical for re-use, auth, auto-register and tages
-      ${tailscale}/bin/tailscale up --ssh -authkey tskey-auth-xxxx
+      ${tailscale}/bin/tailscale up --ssh -authkey tskey-auth-xxxxx
     '';
 };
 
@@ -77,6 +80,10 @@ in {
     htop
     tailscale
     lsof
+    jq
+    mlocate
+    tcpdump
+    inetutils
   ];
 }
 

@@ -41,6 +41,16 @@ resource "aws_key_pair" "generated_key" {
     key_name   = "generated-key-${sha256(tls_private_key.state_ssh_key.public_key_openssh)}"
     public_key = tls_private_key.state_ssh_key.public_key_openssh
 }
+# This is first pass at pulling a secret out, will need to play
+data "aws_secretsmanager_secret_version" "kes_secret" {
+  secret_id = "arn:aws:secretsmanager:ap-southeast-2:407250907589:secret:testnet/kes.skey-LR7hrJ"
+}
+data "aws_secretsmanager_secret_version" "vrf_secret" {
+  secret_id = "arn:aws:secretsmanager:ap-southeast-2:407250907589:secret:testnet/vrf.skey-2I4d7Y"
+}
+data "aws_secretsmanager_secret_version" "cert_secret" {
+  secret_id = "arn:aws:secretsmanager:ap-southeast-2:407250907589:secret:testnet/node.cert-Vq66Lh"
+}
 
 resource "aws_instance" "machine" {
     ami                    = module.nixos_image.ami
@@ -52,8 +62,25 @@ resource "aws_instance" "machine" {
     root_block_device {
         volume_size  = 50 # GiB
     }
-    user_data = "${file("start_node.sh")}"
+
+  user_data = "${file("start_node.sh")}"
+  connection {
+    type        = "ssh"
+    host        = aws_instance.machine.public_ip
+    user        = "root"
+    private_key = file("${path.module}/id_rsa.pem")
+  }
+  provisioner "remote-exec" {
+
+    inline = [
+      "echo '${data.aws_secretsmanager_secret_version.cert_secret.secret_string}' > /run/node_cert",
+      "echo '${data.aws_secretsmanager_secret_version.vrf_secret.secret_string}' > /run/vrf_secret",
+      "echo '${data.aws_secretsmanager_secret_version.kes_secret.secret_string}' > /run/kes_secret",
+    ]
+  }
+
 }
+
 
 output "public_dns" {
     value = aws_instance.machine.public_dns
@@ -65,6 +92,7 @@ module "deploy_nixos" {
     target_host = aws_instance.machine.public_ip
     ssh_private_key_file = local_sensitive_file.machine_ssh_key.filename
     ssh_agent = false
+    depends_on = [aws_instance.machine]
 }
 
 
