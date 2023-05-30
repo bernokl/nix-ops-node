@@ -1224,6 +1224,151 @@ cd /cardano-node/
 #+end_src
 - SOOO COOL. I would like to use pool-tool or other to get more details, but I see the id in the ledger, need to find more metadata.
 
+*** Secrets:
+- TO get this done I need to:
+- Fix startup script for bp to use aws secrets
+- Fix topology between nodes, go read relay topology section, the talk about bp
+- Get visibility, viewGL.sh?, ekg (what else does it show?), grafana (what already exists), prometheus exporter, what do I get?
+- Curent process, 
+- Lets set the env vars, see if we can run our node with keys:
+#+begin_src tmux :session s1
+KES=$HOME/cardano-testnet/keys/kes.skey
+VRF=$HOME/cardano-testnet/keys/vrf.skey
+CERT=$HOME/cardano-testnet/keys/node.cert
+#+end_src
+- First lets stop the service that is currently running our node
+#+begin_src tmux :session s1
+systemctl stop cardano-node-block-producer-daemon.service 
+#+end_src
+- Let us manually try to run our node with the new values:
+#+begin_src tmux :session s1
+nix run --accept-flake-config github:input-output-hk/cardano-node?ref=master run -- --topology /cardano-node/configuration/cardano/testnet-topology.json --socket-path /tmp/cardano-node.socket --port 6001 --config /cardano-node/configuration/cardano/testnet-config.json --shelley-kes-key ${KES} --shelley-vrf-key ${VRF} --shelley-operational-certificate ${CERT}
+#+end_src
+- So we set env vars and run daemen passing those in. How do you do that for a service?
+- Lets ask LLM for its opinion.
+- It suggests creating an environment file I then reference for the service
+- I like that idea as it allows us to itterate on the creation of that environment file and keys to be secure.
+- Lets see how we go, setting up file that looks exacly like KES, VRF, CERT file above
+- Updating service to something like this. I could never get environment file to work, decided to switch to script that sets vars)
+#+begin_example
+[Unit]
+Description=block-producer
+
+[Service]
+EnvironmentFile=/root/cardano/testnet/environment
+ExecStart= nix run --accept-flake-config github:input-output-hk/cardano-node?ref=master run -- --topology /cardano-node/configuration/cardano/testnet-topology.json --socket-path /tmp/cardano-node.socket --port 6001 --config /cardano-node/configuration/cardano/testnet-config.json --shelley-kes-key ${KES} --shelley-vrf-key ${VRF} --shelley-operational-certificate ${CERT}
+
+[Install]
+WantedBy=multi-user.target
+#+end_example
+- Lets see what that looks like in our configuration.nix 
+- I tried various incarnations declaring s3 json file setting that to /root/secret and a few others, but never got it to work right.
+- I think the right think would be to call key-store like aws or other for this. 
+- To get around this for now I am going to add the env var setting and startup script to a sh I will call from ExecStart, that way terraform has a valid object and the vars can be set at runtime, I hope.
+- For now create static, add the following to start_node.sh
+#+begin_example
+# Create control script for the node
+cat << 'EOF' > /run/run_bp
+source /root/cardano-testnet/environment
+/run/current-system/sw/bin/nix run --accept-flake-config github:input-output-hk/cardano-node?ref=master run -- --topology /cardano-node/configuration/cardano/testnet-topology.json --socket-path /tmp/cardano-node.socket --port 6001 --config /cardano-node/configuration/cardano/testnet-config.json --shelley-kes-key ${KES} --shelley-vrf-key ${VRF} --shelley-operational-certificate ${CERT}
+EOF
+#+end_example
+- At this point we have to manually craate the environment file:
+#+begin_example
+export KES=$HOME/cardano-testnet/keys/kes.skey
+export VRF=$HOME/cardano-testnet/keys/vrf.skey
+export CERT=$HOME/cardano-testnet/keys/node.cert
+#+end_example
+- We also create those files outside of the provisioning steps.
+- One way to move them off is to add them as aws secrets in terraform 
+- Playing with this:
+#+begin_example
+
+ user_data = templatefile("${path.module}/start_node.sh", {
+    KES = data.aws_secretsmanager_secret_version.testnet/kes.skey.secret_string
+    VRF = data.aws_secretsmanager_secret_version.testnet/vrf.skey.secret_string
+    CERT = data.aws_secretsmanager_secret_version.testnet/node_cert.secret_string
+  })
+
+#+end_example
+- Troubleshooting, lots of itteration to try to get tf to show me the variables with output.
+- Without sensitive = true it errors out trying to avoid exposing secrets, with it set to true the output is redacted in the apply
+#+begin_example
+output "user_data_script" {
+  sensitive = true
+  value = aws_instance.machine.user_data
+}
+#+end_example
+- Finally learned on snarky stackoverflow, after the apply run:
+#+begin_example
+terragrunt output user_data_script
+#+end_example
+- It takes a minute, but shows me that my variables is not being substituted....
+- Solution, what I implemented after some itteration. At the end I will discuss some improvements.
+- I moved the command to run the node to a script of its own, I like modular script I can tweak for env vars etc without impacting node_start.sh
+- I do end up with the secrets written to files I use in my startup. 
+- I used a remote executioner I added to aws_instance, I do not like this solution, it is crude.
+- It gives us something to itterate on, I need adult supervision for this implementation:
+- Here are the updates I ended up making to main.tf:
+#+begin_example
+
+# This is first pass at pulling a secret out, will need to play
+# I do not like that the secret arn goes here, but have not find a good way to keep the arn out of git.
+data "aws_secretsmanager_secret_version" "kes_secret" {
+  secret_id = "arn:aws:secretsmanager:ap-southeast-2:407250907589:secret:testnet/kes.skey-LR7hrJ"
+}
+#....etc for all 3
+
+#This is inside resource "aws_instance"
+  connection {
+    type        = "ssh"
+    host        = aws_instance.machine.public_ip
+    user        = "root"
+    private_key = file("${path.module}/id_rsa.pem")
+  }
+  provisioner "remote-exec" {
+# I did lots of itteration with env vars I would then pass to user_data, but this was the only reliable way I found to access the secrets from the daemon start. I really want a cleaner way, but with these secured.
+    inline = [
+      "echo '${data.aws_secretsmanager_secret_version.cert_secret.secret_string}' > /run/node_cert",
+      "echo '${data.aws_secretsmanager_secret_version.vrf_secret.secret_string}' > /run/vrf_secret",
+      "echo '${data.aws_secretsmanager_secret_version.kes_secret.secret_string}' > /run/kes_secret",
+    ]
+  }
+  
+# This was a multi hour research gem on why deploy_nixos stopped running after I added the remote-exec, 
+# Adding this depends_on seems to make deploy_nixos run every time I update the machine. Not sure if there is better way, 
+# I know I can manually terraform -apply deploy_nixos, leaving this in for now.
++    depends_on = [aws_instance.machine]
+
+#+end_example
+- In the node_start.sh I create a run_bp I will call from my configuration.nix service creation:
+#+begin_example
+# Create control script for the node
+cat << EOF > /run/run_bp
+# source /root/cardano-testnet/environment
+/run/current-system/sw/bin/nix run --accept-flake-config github:input-output-hk/cardano-node?ref=master run -- --topology /cardano-node/configuration/cardano/testnet-topology.json --socket-path /tmp/cardano-node.socket --port 6001 --config /cardano-node/configuration/cardano/testnet-config.json --shelley-kes-key /run/kes_secret --shelley-vrf-key /run/vrf_secret --shelley-operational-certificate /run/node_cert
+
+
+EOF
+
+chmod 700 /run/run_bp
+chmod 600 /run/kes_secret
+chmod 600 /run/vrf_secret
+chmod 600 /run/node_cert
+#+end_example
+- And then I update my ExecStart in cardano serviceConfig section of configuration.nix to just call the run_bp we created.
+#+begin_example
+    serviceConfig = {
+-      ExecStart = "${pkgs.nix}/bin/nix run --accept-flake-config github:input-output-hk/cardano-node?ref=master run -- --topology /cardano-node/configuration/cardano/testnet-topology.json --socket-path /tmp/cardano-node.socket --port 6001 --config /cardano-node/configuration/cardano/testnet-config.json --shelley-kes-key ${KES} --shelley-vrf-key ${VRF} --shelley-operational-certificate ${CERT}";
+ +     ExecStart = "${pkgs.bash}/bin/bash -c /run/run_bp";
+ 
+#+end_example
+
+- TODO: 
+- IMPROVEMENTS:
+- The aws secrets need to be env var or at least current file method needs to be vetted for better design and security
+
+
 
 
 
@@ -1291,6 +1436,10 @@ cardano-node run \
   - Continue block producer tutorial here: https://developers.cardano.org/docs/operate-a-stake-pool/block-producer-keys#stakepool-operational-certificate-generation
   - Worked through that link and now I have a block producer with a registered stake pool.
   - I still need some validation on what I did, but sandbox has a working testnet bp, rn and stake-pool
+  - I have working producer that will start up based on secrets I set in aws.
+  - Next I am going to split the work into a private yumi repo where I will be cleaning up cruft, hardening steps create README for final deploy. 
+  - I still also need to fix topology and  create some monitoring.
+  - Keep in mind ARM cost savings once we are running.
 
 ** Archive of old steps, this is all done
   - Add final parts to make prod ready and move on to block-producer
