@@ -1,11 +1,6 @@
 #!env bash -xe
 git clone https://github.com/input-output-hk/cardano-node.git &&
 
-#echo "${VRF}" > /tmp/secret.vrf
-#echo "${CERT}" > /tmp/secret.cert
-#echo "${KES}" > /tmp/secret.kes
-
-echo you should have a secret > /tmp/hi
 
 
 # Populate config files
@@ -38,7 +33,6 @@ nix build --accept-flake-config github:input-output-hk/cardano-node?ref=master &
 
 # Create control script for the node
 cat << EOF > /run/run_bp
-# source /root/cardano-testnet/environment
 /run/current-system/sw/bin/nix run --accept-flake-config github:input-output-hk/cardano-node?ref=master run -- --topology /cardano-node/configuration/cardano/testnet-topology.json --socket-path /tmp/cardano-node.socket --port 6001 --config /cardano-node/configuration/cardano/testnet-config.json --shelley-kes-key /run/kes_secret --shelley-vrf-key /run/vrf_secret --shelley-operational-certificate /run/node_cert
 
 

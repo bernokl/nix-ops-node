@@ -92,6 +92,7 @@ module "deploy_nixos" {
     target_host = aws_instance.machine.public_ip
     ssh_private_key_file = local_sensitive_file.machine_ssh_key.filename
     ssh_agent = false
+## IMPORTANT, you need this for repo configuration.nix to be applied to any ec2 changes.
     depends_on = [aws_instance.machine]
 }
 

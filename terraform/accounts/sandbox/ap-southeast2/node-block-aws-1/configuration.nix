@@ -22,9 +22,11 @@ in {
     wantedBy = ["multi-user.target"];
 
     serviceConfig = {
+# Note I have the flake running from here in southeast1, this still has constant PID cycling that needs to be resolved or this has to bereverted to work like southeast1, it is simply updating this exec start to run the command pointing to files we hydrate
 #      ExecStart = "${pkgs.nix}/bin/nix run --accept-flake-config github:input-output-hk/cardano-node?ref=master run -- --topology /cardano-node/configuration/cardano/testnet-topology.json --socket-path /tmp/cardano-node.socket --port 6001 --config /cardano-node/configuration/cardano/testnet-config.json --shelley-kes-key ${KES} --shelley-vrf-key ${VRF} --shelley-operational-certificate ${CERT}";
       ExecStart = "${pkgs.bash}/bin/bash -c /run/run_bp";
-      Type = "forking";
+# I think this forking causes pid cycling, no time to test, but previous resolution of the problem included removing this line, commenting out for now, add back if you need this 
+#      Type = "forking";
       User = "root"; 
       Group = "root"; 
       Restart = "always";
@@ -81,7 +83,6 @@ in {
     tailscale
     lsof
     jq
-    mlocate
     tcpdump
     inetutils
   ];

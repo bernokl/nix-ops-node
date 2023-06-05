@@ -215,11 +215,11 @@
         "nixpkgs": "nixpkgs_4"
       },
       "locked": {
-        "lastModified": 1685089832,
-        "narHash": "sha256-wqLv+DL53pCC9ZlRBYxpfU67x4wF/6b7l5syhpvROh4=",
+        "lastModified": 1685384827,
+        "narHash": "sha256-lEEMXGKQY5cUWO9vS08a5VLPbVAJm6xGBTd3Cnfg99c=",
         "owner": "astro",
         "repo": "microvm.nix",
-        "rev": "684cdc02fb364a8287fa9f6214d106670859196a",
+        "rev": "3683f43a37568fbc14bdc1c952acb41b0bb09a01",
         "type": "github"
       },
       "original": {
