@@ -1373,68 +1373,14 @@ chmod 600 /run/node_cert
 
 
 
-*** outstanding steps from buildCardanoStakePoolUbuntu.org
-- URL: https://github.com/yumiai/docs/blob/main/bernoHome/buildCardanoStakePoolUbuntu.org#create-core-node-and-use-the-above-relay-nodes
-- Update the relay topology.json for both relay and block-producter to add our tailscale network names for 2xrelay and 1xblock producer
-- Generate some keys
-   #+begin_src tmux :session tmux-old-host
-cardano-cli node key-gen \
---cold-verification-key-file cold.vkey \
---cold-signing-key-file cold.skey \
---operational-certificate-issue-counter-file cold.counter
-   #+end_src
-**** Generate stake keys and address
-Stake key pair
-   #+begin_src tmux :session s1
- cardano-cli stake-address key-gen \
- --verification-key-file stake.vkey \
- --signing-key-file stake.skey
-   #+end_src
-**** Registser address in the blockchain
-   #+begin_src tmux :session s1
-    cardano-cli stake-address build \
- --stake-verification-key-file stake.vkey \
- --out-file stake.addr \
- --testnet-magic 1097911063
-   #+end_src
-**** Regenrate payment address
-   #+begin_src tmux :session s1
- cardano-cli address build \
- --payment-verification-key-file payment.vkey \
- --stake-verification-key-file stake.vkey \
- --out-file paymentwithstake.addr \
- --testnet-magic 1097911063
-   #+end_src
-**** Register stake address in the blockchain
-***** Generate registration certificate
-   #+begin_src tmux :session s1
-cardano-cli stake-address registration-certificate \
---stake-verification-key-file stake.vkey \
---out-file stake.cert
-   #+end_src
-**** Start my relay-node
-   #+begin_src tmux :session tmux-old-host
-cardano-node run \
---topology testnet-topology.json \
---database-path db \
---socket-path db/node.socket \
---host-addr 0.0.0.0 \
---port 3001 \
---config testnet-config.json
-   #+end_src
-- TODO: Need the flags to start our block producer, should be similar just including keys.
-   
   
-* Next steps. 
+
+* Additional information
+- We can start with a copy of https://github.com/bernokl/nix-ops take learnings from https://github.com/yumiai/docs/blob/main/bernoHome/diypool_apply.org and deploy what we can from: input-output-hk/cardano-node
+- Step 1, properly review what we did in diypool_apply and compare that to information you can find in iohk/cardano-node to see if we can build up list of steps for deploy
+  
+* Next steps:
 ** Current
-  - The terragrunt research culmintated in restructure that allows us to spin up 3 relay-nodes each checking in a different region, each configured with tailscale
-  - We are now in the process of re-applying what we overlap on a block-producer
-  - Researh shows we have the files we need to apply this change to in input-output-hk/cardano-node/configuration/cardano
-  - I figured out how to pass in the flags we need. -- duh, now I can create and set the node-socket and even qury our node
-  - Set up configs to auto provision 3 relays and a bp node to use testnet in sandbox
-  - Next step is to update topology for both relay and producer and generate some keys implement rest of the "outstanding steps from buildCardanoStakePoolUbuntu.org"
-  - Continue block producer tutorial here: https://developers.cardano.org/docs/operate-a-stake-pool/block-producer-keys#stakepool-operational-certificate-generation
-  - Worked through that link and now I have a block producer with a registered stake pool.
   - I still need some validation on what I did, but sandbox has a working testnet bp, rn and stake-pool
   - I have working producer that will start up based on secrets I set in aws.
   - Next I am going to split the work into a private yumi repo where I will be cleaning up cruft, hardening steps create README for final deploy. 
@@ -1447,6 +1393,14 @@ cardano-node run \
   - The new machine registers itself in tailscale, you can use tailscales to authenticate ssh over the 10. network, you can find machine by ip or networking.hostName
   - I can see healty logs with work the node is doing, I can see a dashboard with healty metrics, I still need to query and cli interact with the server
   - Document and test what we have, I see 
+  - The terragrunt research culmintated in restructure that allows us to spin up 3 relay-nodes each checking in a different region, each configured with tailscale
+  - We are now in the process of re-applying what we overlap on a block-producer
+  - Researh shows we have the files we need to apply this change to in input-output-hk/cardano-node/configuration/cardano
+  - I figured out how to pass in the flags we need. -- duh, now I can create and set the node-socket and even qury our node
+  - Set up configs to auto provision 3 relays and a bp node to use testnet in sandbox
+  - Next step is to update topology for both relay and producer and generate some keys implement rest of the "outstanding steps from buildCardanoStakePoolUbuntu.org"
+  - Continue block producer tutorial here: https://developers.cardano.org/docs/operate-a-stake-pool/block-producer-keys#stakepool-operational-certificate-generation
+  - Worked through that link and now I have a block producer with a registered stake pool.
 
   
 
@@ -1465,14 +1419,8 @@ cardano-node run \
 
 - Things to keep in mind:
 #+begin_example
-- Still need to figure out how we set configurations for the node ie whitelist block producer etc
 - iptables
 - network groups in aws
 - still need to think about key management
 #+end_example
 
-
-
-* Additional information
-- We can start with a copy of https://github.com/bernokl/nix-ops take learnings from https://github.com/yumiai/docs/blob/main/bernoHome/diypool_apply.org and deploy what we can from: input-output-hk/cardano-node
-- Step 1, properly review what we did in diypool_apply and compare that to information you can find in iohk/cardano-node to see if we can build up list of steps for deploy
