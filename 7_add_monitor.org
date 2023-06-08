@@ -1,0 +1,90 @@
+* Monitor
+- Goal of this document is to explore monitoring for our stake pool
+- First exploration will be grafana dashboard with prometheus exports
+- We will research additional options for monitoring
+*** Grafana dashboards 
+- Looking at this: https://developers.cardano.org/docs/operate-a-stake-pool/grafana-dashboard-tutorial
+- Boo it is a LOT of instructions geared to debian, will need to translate to nixos... wonder what flakes exists for prometheus and grafana?
+- TLDR I need to find a simple tutorial for spinning up my grafana node.
+- I am in the mood to try to just lift configuration.nix sections from this into my own and see what comes up....
+- This should be simple lets first copy one of our node directories and start with that.
+- O, or I can start with this https://github.com/input-output-hk/cardano-node/blob/master/doc/logging-monitoring/prometheus.md 
+- I am going to build this with a copy of an existing node, just updating configuration.nix, start_node.sh and main.tf to the role of grafana.
+- I am mostly stealing the configuration changes from here: https://xeiaso.net/blog/prometheus-grafana-loki-nixos-2020-11-20
+- The biggest changes is to add the following to the configuration.nix
+#+begin_example
+ # grafana configuration
+  services.grafana = {
+    enable = true;
+    domain = "grafana.pele";
+    port = 2342;
+    addr = "127.0.0.1";
+  };
+  
+  # nginx reverse proxy
+  services.nginx.virtualHosts.${config.services.grafana.domain} = {
+    locations."/" = {
+        proxyPass = "http://127.0.0.1:${toString config.services.grafana.port}";
+        proxyWebsockets = true;
+    };
+  };
+#+end_example
+- Lets init
+#+begin_src tmux :session s1
+terragrunt init
+#+end_src
+- And apply
+#+begin_src tmux :session s1
+terragrunt apply
+#+end_src
+- In the end I enabled the server, exporter and scrape-configs
+- Note I also added targets for my relay and block producer the process is still manual, we can look into making this tag based, but this is just POC:
+#+begin_example
+  services.prometheus = {
+    enable = true;
+    port = 9001;
+    exporters = {
+    node = {
+        enable = true;
+        enabledCollectors = [ "systemd" ];
+        port = 9002;
+      };
+    };
+    scrapeConfigs = [
+      {
+        job_name = "chrysalis";
+        static_configs = [{
+          targets = [
+              "127.0.0.1:${toString config.services.prometheus.exporters.node.port}"
+              "100.108.195.88:${toString config.services.prometheus.exporters.node.port}"
+              "100.91.15.74:${toString config.services.prometheus.exporters.node.port}"
+           ];
+        }];
+      }
+    ];
+  };
+#+end_example
+- On each of the relay and block producer I added the following to configuration.nix
+#+begin_example
+services.prometheus = {
+    exporters = {
+      node = {
+        enable = true;
+        enabledCollectors = [ "systemd" ];
+        port = 9002;
+      };
+    };
+};
+#+end_example
+- And like that I have node_exporter metrics in grafana:
+- Note the dashboard I used for this is a popular example I found when I searched node_exporter on grafana.com
+#+begin_example
+http://100.82.80.131:2342/d/rYdddlPWk/node-exporter-full?orgId=1
+#+end_example
+- The default login for this POC is admin/admin
+
+*** Next step
+- I need to add the cardano metrics_exporter and dashboard.
+- Research additional cardano metrics sources we can use.
+- Research doing this in datadog
+ 
