@@ -82,9 +82,137 @@ services.prometheus = {
 http://100.82.80.131:2342/d/rYdddlPWk/node-exporter-full?orgId=1
 #+end_example
 - The default login for this POC is admin/admin
+  
+*** Try to add cardano metrics
+- Lets go back to https://developers.cardano.org/docs/operate-a-stake-pool/grafana-dashboard-tutorial/#5-add-data-from-cexplorer-to-the-dashboard
+- That has script I need to run to poll metrics from cardano-explorer, but I am not sure how I publish pom metrics using nixos.
+- I also discovered cardano-tracer: https://github.com/input-output-hk/cardano-node/blob/master/cardano-tracer/docs/cardano-tracer.md#Prometheus
+- It looks like it already has prometheus exporter built in, going to play with it a bit.
+- Lets just try on the relay
+#+begin_src tmux :session s1
+cd /cardano-node/
+  nix profile install .#cardano-tracer
+#+end_src
+#+begin_src tmux :session s1
+echo hi
+#+end_src
+- Lets see if we can create unix sockets like they reccomend.
+- Mon is still coming up, so going to try between relay and bp
+- I think I need to create the socket files on each first:
+#+begin_src tmux :session s1
+mkfifo /tmp/forwarder.sock
+#+end_src
+- No, deleted the above
+- This creates a socket, but I want to leave complexity of networking for now
+#+begin_src tmux :session s1
+ssh -nNT -L /tmp/forwarder.sock:/tmp/forwarder.sock -o "ExitOnForwardFailure yes" root@100.93.133.110
+#+end_src
+- I am spinning cardano-tracer up with this config:
+#+begin_example
+cat /cardano-node/cardano-tracer/configuration/minimal-example.yaml 
+---
+networkMagic: 1
+network:
+  tag: AcceptAt
+  contents: "/tmp/forwarder.sock"
+logging:
+- logRoot: "/tmp/cardano-tracer-logs"
+  logMode: FileMode
+  logFormat: ForMachine
+hasPrometheus:
+  epHost: 127.0.0.1
+  epPort: 9031
+#+end_example
+- Running:
+#+begin_src tmux :session s1
+cardano-tracer -c /cardano-node/cardano-tracer/configuration/minimal-example.yaml
+#+end_src
+- This looks happy and ens with:
+#+begin_example
+Listening on http://127.0.0.1:9031
+#+end_example
+- Lets see what the socket gets.
+#+begin_example
+curl http://127.0.0.1:9031                                                 
+There are no connected nodes yet.
+#+end_example
+- I restart my node, I make sure my node starts with 
+#+begin_example
+--tracer-socket-path-connect /tmp/forwarder.sock
+#+end_example
+- But lsof and netstat -an tells me only the tracer process is binding to that socket.
+#+begin_example
+# look at the last few lines of a service
+journalctl -xeu <service name that you got from status above>
+# keep following a service
+journalctl -e -f -u <service name that you got from status above>
+#+end_example
+- It acknowledges the existence of the /tmp/forwarder.sock when I stop/start the node.
+- It does not however acknowledge connecting, and the curl still shows no connections.
+- I start the ssh session to attach to the socket from the bp.
+- Connection on bp side looks fine, but cardano node also does not connect to trace via remote socket.
+- U suspect tracing is not enabled in the node itself, lots of things in config makes me think it should be:
+#+begin_example
+at /cardano-node/configuration/cardano/testnet-config.json | grep -i trace | grep true
+  "TraceAcceptPolicy": true,
+  "TraceChainDb": true,
+  "TraceConnectionManager": true,
+  "TraceDNSResolver": true,
+  "TraceDNSSubscription": true,
+  "TraceDiffusionInitialization": true,
+  "TraceErrorPolicy": true,
+  "TraceForge": true,
+  "TraceInboundGovernor": true,
+  "TraceIpSubscription": true,
+  "TraceLedgerPeers": true,
+  "TraceLocalErrorPolicy": true,
+  "TraceLocalRootPeers": true,
+  "TraceMempool": true,
+  "TracePeerSelection": true,
+  "TracePeerSelectionActions": true,
+  "TracePublicRootPeers": true,
+  "TraceServer": true,
+#+end_example
+- Right? But wondering if there is master config for this not set?
+- Nothing obvious in the config, no luck in google or LLM,
+- Need a good code spelunker, I should ask Rob for some pointers on where to look
+- Good morning, goal today is to get relay node to give me some trace data.
+- Way to profile install a nixpkg 
+#+begin_src tmux :session s1
+nix profile install nixpkgs#socat
+#+end
+- SAD PANDA! There was always a prometheus section in the /cardano-node/configuration/cardano/testnet-config.json 
+#+begin_example 
+  "hasPrometheus": [
+    "127.0.0.1",
+    12798
+  ],
+#+end_example
+- Sooo we simply add a scrape config on our monitor prometheus, inside the configuration.nix
+- TODO: Make this more modular, define this above in exporter
+#+begin_example 
+ scrapeConfigs = [
+      {
+        job_name = "chrysalis";
+        static_configs = [{
+          targets = [
+              "127.0.0.1:${toString config.services.prometheus.exporters.node.port}"
+              "100.84.19.134:${toString config.services.prometheus.exporters.node.port}" 
+++            "100.84.19.134:12798" 
+              "100.113.176.70:${toString config.services.prometheus.exporters.node.port}" 
+++            "100.113.176.70:12798"
+           ];
+        }];
+#+end_example
+- And from there it was a quick step to stand up https://github.com/sanskys/SNSKY/blob/main/SNSKY_Dashboard_v2.json which is part of this tutorial https://github.com/input-output-hk/cardano-node/blob/master/doc/logging-monitoring/grafana.md
+- I also have the node exporter https://grafana.com/grafana/dashboards/854-simple-prometheus-node-exporter/
+
+
 
 *** Next step
 - I need to add the cardano metrics_exporter and dashboard.
+- For future I would also still learn more how to get to the trace data, I think it is writing to the journalctl log but I would like to consume this in prometheus.
 - Research additional cardano metrics sources we can use.
 - Research doing this in datadog
- 
+- Still need to stand up https://developers.cardano.org/docs/operate-a-stake-pool/grafana-dashboard-tutorial/#5-add-data-from-cexplorer-to-the-dashboard prometheus gauge so I can add the dashboard.
+- We need actual alerting to send out from this, we can hook this into pagerduty or other SAAS platform, just need to decide what we are doing with it
